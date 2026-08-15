@@ -34,7 +34,10 @@ public:
 	void update_marker(const MemoMarker &marker);
 	void clear();
 
-	const std::vector<MemoMarker> &get_markers() const { return markers_; }
+	const std::vector<MemoMarker> &get_markers() const
+	{
+		return markers_;
+	}
 
 signals:
 	void markerCommentChanged(uint32_t marker_id, const QString &comment);

@@ -21,7 +21,8 @@ RecordingSession::~RecordingSession()
 	}
 }
 
-bool RecordingSession::start_session(const std::string &video_path, const VideoFrameRate &fps, uint32_t width, uint32_t height)
+bool RecordingSession::start_session(const std::string &video_path, const VideoFrameRate &fps, uint32_t width,
+				     uint32_t height)
 {
 	std::lock_guard<std::mutex> lock(mutex_);
 
@@ -39,24 +40,24 @@ bool RecordingSession::start_session(const std::string &video_path, const VideoF
 	markers_.clear();
 	next_marker_id_ = 1;
 
-	// キャッシュファイル作成 ({video_path}.tmp.jsonl)
 	cache_file_path_ = get_cache_file_path();
-	cache_stream_.open(cache_file_path_, std::ios::out | std::ios::trunc);
-	if (cache_stream_.is_open()) {
-		// ヘッダー行出力
-		QJsonObject header;
-		header["type"] = "header";
-		header["session_id"] = QString::fromStdString(session_id_);
-		header["video_path"] = QString::fromStdString(video_path_);
-		header["started_at"] = QString::fromStdString(started_at_);
-		header["fps_num"] = static_cast<qint64>(fps_.num);
-		header["fps_den"] = static_cast<qint64>(fps_.den);
-		header["width"] = static_cast<qint64>(width_);
-		header["height"] = static_cast<qint64>(height_);
+	if (!cache_file_path_.empty()) {
+		cache_stream_.open(cache_file_path_, std::ios::out | std::ios::trunc);
+		if (cache_stream_.is_open()) {
+			QJsonObject header;
+			header["type"] = "header";
+			header["session_id"] = QString::fromStdString(session_id_);
+			header["video_path"] = QString::fromStdString(video_path_);
+			header["started_at"] = QString::fromStdString(started_at_);
+			header["fps_num"] = static_cast<qint64>(fps_.num);
+			header["fps_den"] = static_cast<qint64>(fps_.den);
+			header["width"] = static_cast<qint64>(width_);
+			header["height"] = static_cast<qint64>(height_);
 
-		QJsonDocument doc(header);
-		cache_stream_ << doc.toJson(QJsonDocument::Compact).toStdString() << "\n";
-		cache_stream_.flush();
+			QJsonDocument doc(header);
+			cache_stream_ << doc.toJson(QJsonDocument::Compact).toStdString() << "\n";
+			cache_stream_.flush();
+		}
 	}
 
 	return true;
@@ -76,7 +77,6 @@ bool RecordingSession::stop_session(std::string *out_json_path)
 		cache_stream_.close();
 	}
 
-	// 正式な JSON を書き出す
 	std::string json_path = "";
 	if (!video_path_.empty()) {
 		QFileInfo fi(QString::fromStdString(video_path_));
@@ -89,7 +89,6 @@ bool RecordingSession::stop_session(std::string *out_json_path)
 		*out_json_path = json_path;
 	}
 
-	// キャッシュファイルをクリーンアップ
 	cleanup_cache_file();
 
 	return true;
@@ -130,7 +129,8 @@ MemoMarker RecordingSession::add_marker(uint64_t ms, int type_index, const std::
 {
 	std::lock_guard<std::mutex> lock(mutex_);
 
-	MemoMarker marker = MemoMarker::create(next_marker_id_++, ms, fps_, type_index, label, color, comment, is_paused);
+	MemoMarker marker =
+		MemoMarker::create(next_marker_id_++, ms, fps_, type_index, label, color, comment, is_paused);
 	markers_.push_back(marker);
 
 	flush_marker_to_cache(marker);
@@ -138,7 +138,8 @@ MemoMarker RecordingSession::add_marker(uint64_t ms, int type_index, const std::
 	return marker;
 }
 
-bool RecordingSession::update_marker(uint32_t marker_id, const std::string &label, const std::string &color, const std::string &comment)
+bool RecordingSession::update_marker(uint32_t marker_id, const std::string &label, const std::string &color,
+				     const std::string &comment)
 {
 	std::lock_guard<std::mutex> lock(mutex_);
 	for (auto &m : markers_) {

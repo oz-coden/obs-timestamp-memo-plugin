@@ -9,8 +9,7 @@
 #include <QMessageBox>
 #include <QVBoxLayout>
 
-SettingsDialog::SettingsDialog(QWidget *parent)
-	: QDialog(parent)
+SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent)
 {
 	setWindowTitle("Timestamp Memo - Settings");
 	setMinimumWidth(440);
@@ -22,7 +21,6 @@ void SettingsDialog::setup_ui()
 {
 	auto *main_layout = new QVBoxLayout(this);
 
-	// 1. マーカー設定グループ
 	auto *grp_markers = new QGroupBox("Marker Configuration (4 Slots)", this);
 	auto *markers_layout = new QVBoxLayout(grp_markers);
 
@@ -39,9 +37,7 @@ void SettingsDialog::setup_ui()
 		color_btn->setFixedWidth(60);
 		color_btn->setText("Color");
 
-		connect(color_btn, &QPushButton::clicked, this, [this, i]() {
-			onPickColor(i);
-		});
+		connect(color_btn, &QPushButton::clicked, this, [this, i]() { onPickColor(i); });
 
 		row_layout->addWidget(lbl);
 		row_layout->addWidget(edit);
@@ -54,7 +50,6 @@ void SettingsDialog::setup_ui()
 	}
 	main_layout->addWidget(grp_markers);
 
-	// 2. 自動エクスポート設定グループ
 	auto *grp_auto = new QGroupBox("Auto-Export on Recording Stop", this);
 	auto *auto_layout = new QVBoxLayout(grp_auto);
 
@@ -71,14 +66,12 @@ void SettingsDialog::setup_ui()
 	auto_layout->addWidget(chk_auto_xml_);
 	main_layout->addWidget(grp_auto);
 
-	// 3. 全般設定
 	auto *grp_general = new QGroupBox("General Options", this);
 	auto *gen_layout = new QVBoxLayout(grp_general);
 	chk_status_bar_ = new QCheckBox("Show notification in OBS status bar upon stamping", this);
 	gen_layout->addWidget(chk_status_bar_);
 	main_layout->addWidget(grp_general);
 
-	// ボタン (Save / Cancel)
 	auto *btn_layout = new QHBoxLayout();
 	btn_layout->addStretch();
 

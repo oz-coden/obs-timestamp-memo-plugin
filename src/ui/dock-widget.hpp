@@ -32,7 +32,6 @@ private slots:
 	void onContextMenuRequested(const QPoint &pos);
 	void updateLiveTimer();
 
-	// ObsBridge シグナルハンドラ
 	void onMarkerAdded(const MemoMarker &marker);
 	void onRecordingStarted(const QString &videoPath);
 	void onRecordingPaused();

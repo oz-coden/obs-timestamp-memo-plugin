@@ -35,31 +35,20 @@ void ObsBridge::initialize()
 	obs_frontend_add_event_callback(on_frontend_event, this);
 	obs_frontend_add_save_callback(on_save, this);
 
-	// ホットキー登録
-	hotkey_marker_1_id_ = obs_hotkey_register_frontend(
-		"obs_timestamp_memo_marker_1",
-		"Timestamp Memo: Quick Marker 1",
-		on_hotkey_marker_1, this);
+	hotkey_marker_1_id_ = obs_hotkey_register_frontend("obs_timestamp_memo_marker_1",
+							   "Timestamp Memo: Quick Marker 1", on_hotkey_marker_1, this);
 
-	hotkey_marker_2_id_ = obs_hotkey_register_frontend(
-		"obs_timestamp_memo_marker_2",
-		"Timestamp Memo: Quick Marker 2",
-		on_hotkey_marker_2, this);
+	hotkey_marker_2_id_ = obs_hotkey_register_frontend("obs_timestamp_memo_marker_2",
+							   "Timestamp Memo: Quick Marker 2", on_hotkey_marker_2, this);
 
-	hotkey_marker_3_id_ = obs_hotkey_register_frontend(
-		"obs_timestamp_memo_marker_3",
-		"Timestamp Memo: Quick Marker 3",
-		on_hotkey_marker_3, this);
+	hotkey_marker_3_id_ = obs_hotkey_register_frontend("obs_timestamp_memo_marker_3",
+							   "Timestamp Memo: Quick Marker 3", on_hotkey_marker_3, this);
 
-	hotkey_marker_4_id_ = obs_hotkey_register_frontend(
-		"obs_timestamp_memo_marker_4",
-		"Timestamp Memo: Quick Marker 4",
-		on_hotkey_marker_4, this);
+	hotkey_marker_4_id_ = obs_hotkey_register_frontend("obs_timestamp_memo_marker_4",
+							   "Timestamp Memo: Quick Marker 4", on_hotkey_marker_4, this);
 
 	hotkey_focus_memo_id_ = obs_hotkey_register_frontend(
-		"obs_timestamp_memo_focus_input",
-		"Timestamp Memo: Focus Memo Input",
-		on_hotkey_focus_memo, this);
+		"obs_timestamp_memo_focus_input", "Timestamp Memo: Focus Memo Input", on_hotkey_focus_memo, this);
 
 	initialized_ = true;
 	obs_log(LOG_INFO, "[Timestamp Memo] ObsBridge initialized");
@@ -121,6 +110,27 @@ uint64_t ObsBridge::get_current_record_ms() const
 	uint64_t total_ms = obs_output_get_total_time(output);
 	obs_output_release(output);
 	return total_ms;
+}
+
+std::string ObsBridge::get_current_record_file_path() const
+{
+	std::string file_path = "";
+	obs_output_t *output = obs_frontend_get_recording_output();
+	if (output) {
+		obs_data_t *settings = obs_output_get_settings(output);
+		if (settings) {
+			const char *path = obs_data_get_string(settings, "path");
+			if (!path || !*path) {
+				path = obs_data_get_string(settings, "url");
+			}
+			if (path && *path) {
+				file_path = path;
+			}
+			obs_data_release(settings);
+		}
+		obs_output_release(output);
+	}
+	return file_path;
 }
 
 VideoFrameRate ObsBridge::get_current_frame_rate() const
@@ -217,8 +227,7 @@ void ObsBridge::perform_auto_export(const std::string &base_video_path)
 
 void ObsBridge::handle_recording_started()
 {
-	const char *rec_path = obs_frontend_get_current_record_output_path();
-	std::string path = rec_path ? rec_path : "";
+	std::string path = get_current_record_file_path();
 
 	VideoFrameRate fps = get_current_frame_rate();
 	uint32_t width = 1920, height = 1080;
@@ -228,7 +237,7 @@ void ObsBridge::handle_recording_started()
 
 	emit markersCleared();
 	emit recordingStarted(QString::fromStdString(path));
-	StatusNotifier::instance().notify("Recording started: " + path, 2000);
+	StatusNotifier::instance().notify("Recording started", 2000);
 }
 
 void ObsBridge::handle_recording_paused()
@@ -246,10 +255,13 @@ void ObsBridge::handle_recording_unpaused()
 void ObsBridge::handle_recording_stopped()
 {
 	std::string video_path = session_.video_path();
+	if (video_path.empty()) {
+		video_path = get_current_record_file_path();
+	}
+
 	std::string json_path;
 	session_.stop_session(&json_path);
 
-	// 自動エクスポート
 	perform_auto_export(video_path);
 
 	emit recordingStopped(QString::fromStdString(json_path));
@@ -258,14 +270,12 @@ void ObsBridge::handle_recording_stopped()
 
 void ObsBridge::handle_recording_file_changed()
 {
-	// 録画ファイル分割時
 	std::string old_video_path = session_.video_path();
 	std::string old_json_path;
 	session_.stop_session(&old_json_path);
 	perform_auto_export(old_video_path);
 
-	const char *new_rec_path = obs_frontend_get_current_record_output_path();
-	std::string new_path = new_rec_path ? new_rec_path : "";
+	std::string new_path = get_current_record_file_path();
 
 	VideoFrameRate fps = get_current_frame_rate();
 	uint32_t width = 1920, height = 1080;

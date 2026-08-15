@@ -18,15 +18,13 @@
 #include <QMessageBox>
 #include <QVBoxLayout>
 
-DockWidget::DockWidget(QWidget *parent)
-	: QDockWidget(parent)
+DockWidget::DockWidget(QWidget *parent) : QDockWidget(parent)
 {
 	setObjectName("ObsTimestampMemoDock");
 	setWindowTitle("Timestamp Memo & Markers");
 
 	setup_ui();
 
-	// ObsBridge シグナル接続
 	auto &bridge = ObsBridge::instance();
 	connect(&bridge, &ObsBridge::markerAdded, this, &DockWidget::onMarkerAdded);
 	connect(&bridge, &ObsBridge::recordingStarted, this, &DockWidget::onRecordingStarted);
@@ -58,7 +56,6 @@ void DockWidget::setup_ui()
 	main_layout->setContentsMargins(6, 6, 6, 6);
 	main_layout->setSpacing(6);
 
-	// 1. トップステータスパネル
 	auto *status_panel = new QFrame(container);
 	status_panel->setFrameShape(QFrame::StyledPanel);
 	status_panel->setStyleSheet("background: palette(alternate-base); border-radius: 4px; padding: 2px;");
@@ -82,7 +79,6 @@ void DockWidget::setup_ui()
 	status_layout->addWidget(lbl_video_name_);
 	main_layout->addWidget(status_panel);
 
-	// 2. クイックマーカーボタン群 (4 slots)
 	auto *quick_layout = new QHBoxLayout();
 	quick_layout->setSpacing(4);
 	quick_marker_btns_.resize(4);
@@ -93,16 +89,13 @@ void DockWidget::setup_ui()
 		btn->setFixedHeight(28);
 		btn->setStyleSheet("font-weight: bold; border-radius: 3px; padding: 2px 6px;");
 
-		connect(btn, &QPushButton::clicked, this, [this, i]() {
-			onQuickMarkerClicked(i);
-		});
+		connect(btn, &QPushButton::clicked, this, [this, i]() { onQuickMarkerClicked(i); });
 
 		quick_layout->addWidget(btn);
 		quick_marker_btns_[i] = btn;
 	}
 	main_layout->addLayout(quick_layout);
 
-	// 3. メモテキスト入力エリア
 	auto *memo_layout = new QHBoxLayout();
 	memo_layout->setSpacing(4);
 
@@ -120,7 +113,6 @@ void DockWidget::setup_ui()
 	memo_layout->addWidget(btn_add_memo_);
 	main_layout->addLayout(memo_layout);
 
-	// 4. テーブルビュー
 	table_view_ = new QTableView(container);
 	table_model_ = new MarkerTableModel(this);
 	table_view_->setModel(table_model_);
@@ -131,7 +123,6 @@ void DockWidget::setup_ui()
 	table_view_->setContextMenuPolicy(Qt::CustomContextMenu);
 	connect(table_view_, &QTableView::customContextMenuRequested, this, &DockWidget::onContextMenuRequested);
 
-	// カラム幅調整
 	auto *header = table_view_->horizontalHeader();
 	header->setSectionResizeMode(MarkerTableModel::Col_Id, QHeaderView::ResizeToContents);
 	header->setSectionResizeMode(MarkerTableModel::Col_Timecode, QHeaderView::ResizeToContents);
@@ -142,7 +133,6 @@ void DockWidget::setup_ui()
 
 	main_layout->addWidget(table_view_);
 
-	// 5. ボトムツールバー
 	auto *bottom_layout = new QHBoxLayout();
 	bottom_layout->setSpacing(4);
 
@@ -180,7 +170,8 @@ void DockWidget::refreshMarkerButtons()
 		QString color = QString::fromStdString(cfg.marker_types[i].color);
 		quick_marker_btns_[i]->setText(QString("%1: %2").arg(i + 1).arg(label));
 		quick_marker_btns_[i]->setStyleSheet(
-			QString("background-color: %1; color: %2; font-weight: bold; border-radius: 3px; padding: 2px 6px;")
+			QString("background-color: %1; color: %2; font-weight: bold; border-radius: 3px; padding: 2px "
+				"6px;")
 				.arg(color)
 				.arg(QColor(color).lightness() > 130 ? "#000000" : "#ffffff"));
 	}
@@ -239,7 +230,8 @@ void DockWidget::onAddMemoClicked()
 
 void DockWidget::onOpenJsonClicked()
 {
-	QString path = QFileDialog::getOpenFileName(this, "Open Recording JSON", "", "JSON Files (*.json);;All Files (*.*)");
+	QString path =
+		QFileDialog::getOpenFileName(this, "Open Recording JSON", "", "JSON Files (*.json);;All Files (*.*)");
 	if (path.isEmpty()) {
 		return;
 	}
@@ -249,7 +241,8 @@ void DockWidget::onOpenJsonClicked()
 		table_model_->set_markers(session.get_markers(), session.frame_rate());
 		QFileInfo fi(path);
 		lbl_video_name_->setText(fi.fileName() + " (Loaded)");
-		StatusNotifier::instance().notify("Loaded " + std::to_string(session.get_markers().size()) + " markers from JSON", 2000);
+		StatusNotifier::instance().notify(
+			"Loaded " + std::to_string(session.get_markers().size()) + " markers from JSON", 2000);
 	} else {
 		QMessageBox::warning(this, "Open Error", "Failed to parse recording JSON file.");
 	}
@@ -285,7 +278,6 @@ void DockWidget::onMarkerCommentChanged(uint32_t marker_id, const QString &comme
 	for (auto &m : session.get_markers()) {
 		if (m.id == marker_id) {
 			session.update_marker(marker_id, m.label, m.color, comment.toStdString());
-			// 編集内容を即座に保存（非録画時も）
 			if (!session.is_active() && !session.video_path().empty()) {
 				session.save_to_json();
 			}
@@ -336,7 +328,7 @@ void DockWidget::onMarkerAdded(const MemoMarker &marker)
 	table_view_->scrollToBottom();
 }
 
-void DockWidget::onRecordingStarted(const QString &videoPath)
+void DockWidget::onRecordingStarted(const QString &)
 {
 	update_status_ui();
 	table_model_->clear();
@@ -352,12 +344,12 @@ void DockWidget::onRecordingUnpaused()
 	update_status_ui();
 }
 
-void DockWidget::onRecordingStopped(const QString &jsonPath)
+void DockWidget::onRecordingStopped(const QString &)
 {
 	update_status_ui();
 }
 
-void DockWidget::onRecordingFileChanged(const QString &newVideoPath)
+void DockWidget::onRecordingFileChanged(const QString &)
 {
 	update_status_ui();
 	table_model_->clear();

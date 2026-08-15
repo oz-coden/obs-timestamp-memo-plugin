@@ -6,8 +6,7 @@
 #include <QPixmap>
 #include <QPainter>
 
-MarkerTableModel::MarkerTableModel(QObject *parent)
-	: QAbstractTableModel(parent)
+MarkerTableModel::MarkerTableModel(QObject *parent) : QAbstractTableModel(parent)
 {
 }
 
@@ -51,11 +50,10 @@ QVariant MarkerTableModel::data(const QModelIndex &index, int role) const
 		}
 	} else if (role == Qt::ForegroundRole) {
 		if (index.column() == Col_Status && m.is_paused) {
-			return QBrush(QColor("#e67e22")); // Orange for paused
+			return QBrush(QColor("#e67e22"));
 		}
 	} else if (role == Qt::DecorationRole) {
 		if (index.column() == Col_Label) {
-			// カラーバッジの描画
 			QPixmap pix(12, 12);
 			pix.fill(Qt::transparent);
 			QPainter painter(&pix);
@@ -118,7 +116,8 @@ Qt::ItemFlags MarkerTableModel::flags(const QModelIndex &index) const
 
 bool MarkerTableModel::setData(const QModelIndex &index, const QVariant &value, int role)
 {
-	if (!index.isValid() || role != Qt::EditRole || index.row() < 0 || index.row() >= static_cast<int>(markers_.size()))
+	if (!index.isValid() || role != Qt::EditRole || index.row() < 0 ||
+	    index.row() >= static_cast<int>(markers_.size()))
 		return false;
 
 	auto &m = markers_[index.row()];

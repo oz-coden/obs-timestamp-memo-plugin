@@ -11,7 +11,7 @@
 struct MarkerTypeConfig {
 	int type_index = 0;
 	std::string label = "Marker 1";
-	std::string color = "#3498db"; // Default Blue
+	std::string color = "#3498db";
 	std::string hotkey_name = "marker_1";
 };
 
@@ -29,9 +29,9 @@ public:
 	std::string created_at_utc;
 	bool is_paused = false;
 
-	static MemoMarker create(uint32_t id, uint64_t ms, const VideoFrameRate &fps,
-				  int type_index, const std::string &label, const std::string &color,
-				  const std::string &comment, bool is_paused);
+	static MemoMarker create(uint32_t id, uint64_t ms, const VideoFrameRate &fps, int type_index,
+				 const std::string &label, const std::string &color, const std::string &comment,
+				 bool is_paused);
 
 	QJsonObject to_json() const;
 	static MemoMarker from_json(const QJsonObject &obj);

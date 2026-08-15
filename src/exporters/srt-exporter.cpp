@@ -20,9 +20,8 @@ bool SrtExporter::export_to_file(const RecordingSession &session, const std::str
 	for (size_t i = 0; i < markers.size(); ++i) {
 		const auto &m = markers[i];
 		uint64_t start_ms = m.timestamp_ms;
-		uint64_t end_ms = start_ms + 2500; // デフォルト2.5秒表示
+		uint64_t end_ms = start_ms + 2500;
 
-		// 次のマーカーがあれば重ならないよう調整
 		if (i + 1 < markers.size()) {
 			end_ms = std::min(end_ms, markers[i + 1].timestamp_ms);
 		}
@@ -31,7 +30,8 @@ bool SrtExporter::export_to_file(const RecordingSession &session, const std::str
 		}
 
 		out << cue_index++ << "\n";
-		out << TimecodeHelper::ms_to_srt_time(start_ms) << " --> " << TimecodeHelper::ms_to_srt_time(end_ms) << "\n";
+		out << TimecodeHelper::ms_to_srt_time(start_ms) << " --> " << TimecodeHelper::ms_to_srt_time(end_ms)
+		    << "\n";
 
 		std::string text = "[" + m.label + "]";
 		if (!m.comment.empty()) {

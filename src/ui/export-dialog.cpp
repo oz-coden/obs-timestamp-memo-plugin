@@ -14,8 +14,7 @@
 #include <QMessageBox>
 #include <QVBoxLayout>
 
-ExportDialog::ExportDialog(const RecordingSession &session, QWidget *parent)
-	: QDialog(parent), session_(session)
+ExportDialog::ExportDialog(const RecordingSession &session, QWidget *parent) : QDialog(parent), session_(session)
 {
 	setWindowTitle("Export Markers");
 	setMinimumWidth(380);
@@ -99,7 +98,8 @@ void ExportDialog::onExportClicked()
 	}
 
 	if (exporter->export_to_file(session_, save_path.toStdString())) {
-		QMessageBox::information(this, "Export Succeeded", QString("Successfully exported to:\n%1").arg(save_path));
+		QMessageBox::information(this, "Export Succeeded",
+					 QString("Successfully exported to:\n%1").arg(save_path));
 		accept();
 	} else {
 		QMessageBox::critical(this, "Export Failed", QString("Failed to write to:\n%1").arg(save_path));

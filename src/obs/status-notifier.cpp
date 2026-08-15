@@ -15,16 +15,19 @@ StatusNotifier &StatusNotifier::instance()
 
 StatusNotifier::StatusNotifier()
 {
-	connect(this, &StatusNotifier::notificationRequested, this, [](const QString &msg, int timeout) {
-		if (!PluginConfig::instance().show_status_bar_notification) {
-			return;
-		}
+	connect(
+		this, &StatusNotifier::notificationRequested, this,
+		[](const QString &msg, int timeout) {
+			if (!PluginConfig::instance().show_status_bar_notification) {
+				return;
+			}
 
-		auto *main_win = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-		if (main_win && main_win->statusBar()) {
-			main_win->statusBar()->showMessage(msg, timeout);
-		}
-	}, Qt::QueuedConnection);
+			auto *main_win = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+			if (main_win && main_win->statusBar()) {
+				main_win->statusBar()->showMessage(msg, timeout);
+			}
+		},
+		Qt::QueuedConnection);
 }
 
 void StatusNotifier::notify(const std::string &message, int timeout_ms)

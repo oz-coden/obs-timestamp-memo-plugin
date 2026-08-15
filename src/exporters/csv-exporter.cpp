@@ -29,7 +29,6 @@ bool CsvExporter::export_to_file(const RecordingSession &session, const std::str
 	// UTF-8 BOM
 	out << "\xEF\xBB\xBF";
 
-	// Header line
 	out << "Index,Timecode In,Timecode Out,Frame In,Elapsed Ms,Marker Name,Comment,Color,Status\n";
 
 	auto markers = session.get_markers();
@@ -37,16 +36,9 @@ bool CsvExporter::export_to_file(const RecordingSession &session, const std::str
 
 	for (const auto &m : markers) {
 		std::string tc = m.active_timecode(fps);
-		out << m.id << ","
-		    << escape_csv(tc) << ","
-		    << escape_csv(tc) << ","
-		    << m.frame_index << ","
-		    << m.timestamp_ms << ","
-		    << escape_csv(m.label) << ","
-		    << escape_csv(m.comment) << ","
-		    << escape_csv(m.color) << ","
-		    << (m.is_paused ? "\"PAUSED\"" : "\"NORMAL\"")
-		    << "\n";
+		out << m.id << "," << escape_csv(tc) << "," << escape_csv(tc) << "," << m.frame_index << ","
+		    << m.timestamp_ms << "," << escape_csv(m.label) << "," << escape_csv(m.comment) << ","
+		    << escape_csv(m.color) << "," << (m.is_paused ? "\"PAUSED\"" : "\"NORMAL\"") << "\n";
 	}
 
 	out.close();
