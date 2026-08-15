@@ -5,6 +5,8 @@
 
 #include <vector>
 #include <QAbstractTableModel>
+#include <QModelIndex>
+#include <QVariant>
 
 class MarkerTableModel : public QAbstractTableModel {
 	Q_OBJECT
@@ -27,7 +29,7 @@ public:
 	QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
 	QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
 	Qt::ItemFlags flags(const QModelIndex &index) const override;
-	bool setData(const QModelIndex &index, const QVariant &value, int role = Qt::EditRole) const override;
+	bool setData(const QModelIndex &index, const QVariant &value, int role = Qt::EditRole) override;
 
 	void set_markers(const std::vector<MemoMarker> &markers, const VideoFrameRate &fps);
 	void add_marker(const MemoMarker &marker, const VideoFrameRate &fps);

@@ -55,20 +55,37 @@ endif()
 target_sources(
   ${CMAKE_PROJECT_NAME}
   PRIVATE src/plugin-main.cpp
+          src/plugin-support.h
+          src/core/timecode-helper.hpp
           src/core/timecode-helper.cpp
+          src/core/memo-marker.hpp
           src/core/memo-marker.cpp
+          src/core/plugin-config.hpp
           src/core/plugin-config.cpp
+          src/core/recording-session.hpp
           src/core/recording-session.cpp
+          src/exporters/exporter-base.hpp
+          src/exporters/json-exporter.hpp
           src/exporters/json-exporter.cpp
+          src/exporters/csv-exporter.hpp
           src/exporters/csv-exporter.cpp
+          src/exporters/edl-exporter.hpp
           src/exporters/edl-exporter.cpp
+          src/exporters/srt-exporter.hpp
           src/exporters/srt-exporter.cpp
+          src/exporters/xml-exporter.hpp
           src/exporters/xml-exporter.cpp
+          src/obs/obs-bridge.hpp
           src/obs/obs-bridge.cpp
+          src/obs/status-notifier.hpp
           src/obs/status-notifier.cpp
+          src/ui/marker-table-model.hpp
           src/ui/marker-table-model.cpp
+          src/ui/dock-widget.hpp
           src/ui/dock-widget.cpp
+          src/ui/settings-dialog.hpp
           src/ui/settings-dialog.cpp
+          src/ui/export-dialog.hpp
           src/ui/export-dialog.cpp
 )
 
