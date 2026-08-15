@@ -7,6 +7,7 @@
 #include "srt-exporter.hpp"
 #include "xml-exporter.hpp"
 
+#include <plugin-support.h>
 #include <QFileInfo>
 #include <QDir>
 #include <obs-frontend-api.h>
@@ -107,9 +108,14 @@ uint64_t ObsBridge::get_current_record_ms() const
 		return 0;
 	}
 
-	uint64_t total_ms = obs_output_get_total_time(output);
+	int total_frames = obs_output_get_total_frames(output);
 	obs_output_release(output);
-	return total_ms;
+
+	if (total_frames > 0) {
+		return TimecodeHelper::frame_index_to_ms(static_cast<uint64_t>(total_frames),
+							 get_current_frame_rate());
+	}
+	return 0;
 }
 
 std::string ObsBridge::get_current_record_file_path() const

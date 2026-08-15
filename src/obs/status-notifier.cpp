@@ -1,6 +1,7 @@
 #include "status-notifier.hpp"
 #include "plugin-config.hpp"
 
+#include <plugin-support.h>
 #include <obs-frontend-api.h>
 #include <obs-module.h>
 #include <QMainWindow>
