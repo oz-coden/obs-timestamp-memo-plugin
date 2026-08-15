@@ -73,14 +73,19 @@ void SettingsDialog::setup_ui()
 	main_layout->addWidget(grp_general);
 
 	auto *btn_layout = new QHBoxLayout();
+
+	auto *btn_reset = new QPushButton("Reset to Defaults", this);
+	connect(btn_reset, &QPushButton::clicked, this, &SettingsDialog::onResetDefaultsClicked);
+	btn_layout->addWidget(btn_reset);
+
 	btn_layout->addStretch();
+
+	auto *btn_cancel = new QPushButton("Cancel", this);
+	connect(btn_cancel, &QPushButton::clicked, this, &SettingsDialog::reject);
 
 	auto *btn_save = new QPushButton("Save Settings", this);
 	btn_save->setDefault(true);
 	connect(btn_save, &QPushButton::clicked, this, &SettingsDialog::onSaveClicked);
-
-	auto *btn_cancel = new QPushButton("Cancel", this);
-	connect(btn_cancel, &QPushButton::clicked, this, &SettingsDialog::reject);
 
 	btn_layout->addWidget(btn_cancel);
 	btn_layout->addWidget(btn_save);
@@ -107,6 +112,34 @@ void SettingsDialog::load_values()
 	chk_auto_xml_->setChecked(cfg.auto_export.xml);
 
 	chk_status_bar_->setChecked(cfg.show_status_bar_notification);
+}
+
+void SettingsDialog::onResetDefaultsClicked()
+{
+	auto res = QMessageBox::question(this, "Reset Settings", "Reset all settings to default values?",
+					 QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+	if (res != QMessageBox::Yes)
+		return;
+
+	const QString default_labels[4] = {"Marker 1", "Chapter", "Highlight", "Cut / Edit"};
+	const QString default_colors[4] = {"#3498db", "#2ecc71", "#f1c40f", "#e74c3c"};
+
+	for (int i = 0; i < 4; ++i) {
+		marker_slots_[i].label_edit->setText(default_labels[i]);
+		marker_slots_[i].current_color = default_colors[i];
+		marker_slots_[i].color_btn->setStyleSheet(
+			QString("background-color: %1; color: %2; font-weight: bold; border-radius: 3px;")
+				.arg(default_colors[i])
+				.arg(QColor(default_colors[i]).lightness() > 130 ? "#000000" : "#ffffff"));
+	}
+
+	chk_auto_json_->setChecked(true);
+	chk_auto_csv_->setChecked(false);
+	chk_auto_edl_->setChecked(false);
+	chk_auto_srt_->setChecked(false);
+	chk_auto_xml_->setChecked(false);
+
+	chk_status_bar_->setChecked(true);
 }
 
 void SettingsDialog::onPickColor(int index)

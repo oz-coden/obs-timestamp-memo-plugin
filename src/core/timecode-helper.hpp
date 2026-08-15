@@ -22,6 +22,7 @@ public:
 	static std::string frame_index_to_smpte(uint64_t frame_index, const VideoFrameRate &fps,
 						bool force_ndf = false);
 	static std::string ms_to_smpte(uint64_t ms, const VideoFrameRate &fps, bool force_ndf = false);
+	static uint64_t smpte_to_frame_index(const std::string &timecode, const VideoFrameRate &fps);
 	static std::string ms_to_timestamp_str(uint64_t ms, bool include_ms = true);
 	static std::string ms_to_srt_time(uint64_t ms);
 	static bool is_drop_frame_rate(uint32_t num, uint32_t den);

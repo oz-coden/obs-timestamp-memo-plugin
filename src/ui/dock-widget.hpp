@@ -4,6 +4,7 @@
 #include "recording-session.hpp"
 
 #include <QDockWidget>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -20,6 +21,9 @@ public:
 
 public slots:
 	void refreshMarkerButtons();
+
+protected:
+	void keyPressEvent(QKeyEvent *event) override;
 
 private slots:
 	void onQuickMarkerClicked(int index);

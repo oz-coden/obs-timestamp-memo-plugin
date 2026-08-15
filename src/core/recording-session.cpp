@@ -1,6 +1,7 @@
 #include "recording-session.hpp"
 #include "plugin-config.hpp"
 
+#include <algorithm>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -17,6 +18,7 @@ RecordingSession::RecordingSession()
 RecordingSession::~RecordingSession()
 {
 	if (cache_stream_.is_open()) {
+		cache_stream_.flush();
 		cache_stream_.close();
 	}
 }
@@ -27,6 +29,7 @@ bool RecordingSession::start_session(const std::string &video_path, const VideoF
 	std::lock_guard<std::mutex> lock(mutex_);
 
 	if (cache_stream_.is_open()) {
+		cache_stream_.flush();
 		cache_stream_.close();
 	}
 
@@ -42,6 +45,9 @@ bool RecordingSession::start_session(const std::string &video_path, const VideoF
 
 	cache_file_path_ = get_cache_file_path();
 	if (!cache_file_path_.empty()) {
+		QFileInfo cfi(QString::fromStdString(cache_file_path_));
+		cfi.dir().mkpath(".");
+
 		cache_stream_.open(cache_file_path_, std::ios::out | std::ios::trunc);
 		if (cache_stream_.is_open()) {
 			QJsonObject header;
@@ -74,12 +80,14 @@ bool RecordingSession::stop_session(std::string *out_json_path)
 	active_ = false;
 
 	if (cache_stream_.is_open()) {
+		cache_stream_.flush();
 		cache_stream_.close();
 	}
 
 	std::string json_path = "";
 	if (!video_path_.empty()) {
 		QFileInfo fi(QString::fromStdString(video_path_));
+		fi.dir().mkpath(".");
 		QString target = fi.dir().filePath(fi.completeBaseName() + ".json");
 		json_path = target.toStdString();
 		save_to_json(json_path);
@@ -218,6 +226,9 @@ bool RecordingSession::save_to_json(const std::string &target_json_path)
 		path = fi.dir().filePath(fi.completeBaseName() + ".json").toStdString();
 	}
 
+	QFileInfo fi(QString::fromStdString(path));
+	fi.dir().mkpath(".");
+
 	QJsonObject root = to_json();
 	QJsonDocument doc(root);
 
@@ -243,8 +254,9 @@ bool RecordingSession::load_from_json(const std::string &json_path)
 	QByteArray data = file.readAll();
 	file.close();
 
-	QJsonDocument doc = QJsonDocument::fromJson(data);
-	if (!doc.isObject()) {
+	QJsonParseError err;
+	QJsonDocument doc = QJsonDocument::fromJson(data, &err);
+	if (err.error != QJsonParseError::NoError || !doc.isObject()) {
 		return false;
 	}
 

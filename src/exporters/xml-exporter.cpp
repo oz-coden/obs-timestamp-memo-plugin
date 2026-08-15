@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <fstream>
+#include <QDir>
 #include <QFileInfo>
 #include <QString>
 
@@ -9,6 +10,7 @@ namespace {
 std::string escape_xml(const std::string &str)
 {
 	std::string res;
+	res.reserve(str.size() * 11 / 10);
 	for (char c : str) {
 		switch (c) {
 		case '&':
@@ -37,13 +39,16 @@ std::string escape_xml(const std::string &str)
 
 bool XmlExporter::export_to_file(const RecordingSession &session, const std::string &output_path)
 {
+	QFileInfo fi(QString::fromStdString(output_path));
+	fi.dir().mkpath(".");
+
 	std::ofstream out(output_path, std::ios::out | std::ios::trunc);
 	if (!out.is_open()) {
 		return false;
 	}
 
-	QFileInfo fi(QString::fromStdString(session.video_path()));
-	std::string seq_name = fi.completeBaseName().toStdString();
+	QFileInfo src_fi(QString::fromStdString(session.video_path()));
+	std::string seq_name = src_fi.completeBaseName().toStdString();
 	if (seq_name.empty()) {
 		seq_name = "OBS Recording Markers";
 	}

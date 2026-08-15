@@ -2,6 +2,8 @@
 
 #include <fstream>
 #include <sstream>
+#include <QFileInfo>
+#include <QDir>
 
 namespace {
 std::string escape_csv(const std::string &str)
@@ -21,6 +23,9 @@ std::string escape_csv(const std::string &str)
 
 bool CsvExporter::export_to_file(const RecordingSession &session, const std::string &output_path)
 {
+	QFileInfo fi(QString::fromStdString(output_path));
+	fi.dir().mkpath(".");
+
 	std::ofstream out(output_path, std::ios::out | std::ios::trunc);
 	if (!out.is_open()) {
 		return false;

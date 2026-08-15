@@ -14,6 +14,7 @@
 #include <QGuiApplication>
 #include <QHeaderView>
 #include <QHBoxLayout>
+#include <QInputDialog>
 #include <QMenu>
 #include <QMessageBox>
 #include <QVBoxLayout>
@@ -162,6 +163,29 @@ void DockWidget::setup_ui()
 	setWidget(container);
 }
 
+void DockWidget::keyPressEvent(QKeyEvent *event)
+{
+	if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
+		QModelIndex idx = table_view_->currentIndex();
+		if (idx.isValid()) {
+			int row = idx.row();
+			const auto &markers = table_model_->get_markers();
+			if (row >= 0 && row < static_cast<int>(markers.size())) {
+				uint32_t mid = markers[row].id;
+				auto &session = ObsBridge::instance().session();
+				session.delete_marker(mid);
+				table_model_->set_markers(session.get_markers(), session.frame_rate());
+				if (!session.is_active() && !session.video_path().empty()) {
+					session.save_to_json();
+				}
+				event->accept();
+				return;
+			}
+		}
+	}
+	QDockWidget::keyPressEvent(event);
+}
+
 void DockWidget::refreshMarkerButtons()
 {
 	const auto &cfg = PluginConfig::instance();
@@ -230,8 +254,14 @@ void DockWidget::onAddMemoClicked()
 
 void DockWidget::onOpenJsonClicked()
 {
-	QString path =
-		QFileDialog::getOpenFileName(this, "Open Recording JSON", "", "JSON Files (*.json);;All Files (*.*)");
+	QString initial_dir = "";
+	if (!ObsBridge::instance().session().video_path().empty()) {
+		QFileInfo fi(QString::fromStdString(ObsBridge::instance().session().video_path()));
+		initial_dir = fi.dir().absolutePath();
+	}
+
+	QString path = QFileDialog::getOpenFileName(this, "Open Recording JSON", initial_dir,
+						   "JSON Files (*.json);;All Files (*.*)");
 	if (path.isEmpty()) {
 		return;
 	}
@@ -269,7 +299,19 @@ void DockWidget::onSettingsClicked()
 
 void DockWidget::onClearClicked()
 {
-	table_model_->clear();
+	if (table_model_->get_markers().empty())
+		return;
+
+	auto btn = QMessageBox::question(this, "Clear Markers", "Are you sure you want to clear all markers?",
+					 QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+	if (btn == QMessageBox::Yes) {
+		auto &session = ObsBridge::instance().session();
+		session.clear_markers();
+		table_model_->clear();
+		if (!session.is_active() && !session.video_path().empty()) {
+			session.save_to_json();
+		}
+	}
 }
 
 void DockWidget::onMarkerCommentChanged(uint32_t marker_id, const QString &comment)
@@ -304,6 +346,24 @@ void DockWidget::onContextMenuRequested(const QPoint &pos)
 	QAction *act_copy_tc = menu.addAction("Copy Timecode");
 	QAction *act_copy_memo = menu.addAction("Copy Memo Text");
 	menu.addSeparator();
+
+	QMenu *menu_type = menu.addMenu("Change Type");
+	const auto &cfg = PluginConfig::instance();
+	for (int i = 0; i < 4 && i < static_cast<int>(cfg.marker_types.size()); ++i) {
+		QString label = QString::fromStdString(cfg.marker_types[i].label);
+		QAction *act_type = menu_type->addAction(QString("%1: %2").arg(i + 1).arg(label));
+		connect(act_type, &QAction::triggered, this, [this, marker, i, &cfg]() {
+			auto &session = ObsBridge::instance().session();
+			session.update_marker(marker.id, cfg.marker_types[i].label, cfg.marker_types[i].color,
+					      marker.comment);
+			table_model_->set_markers(session.get_markers(), session.frame_rate());
+			if (!session.is_active() && !session.video_path().empty()) {
+				session.save_to_json();
+			}
+		});
+	}
+
+	menu.addSeparator();
 	QAction *act_del = menu.addAction("Delete Marker");
 
 	QAction *selected = menu.exec(table_view_->viewport()->mapToGlobal(pos));
@@ -319,6 +379,9 @@ void DockWidget::onContextMenuRequested(const QPoint &pos)
 		auto &session = ObsBridge::instance().session();
 		session.delete_marker(marker.id);
 		table_model_->set_markers(session.get_markers(), session.frame_rate());
+		if (!session.is_active() && !session.video_path().empty()) {
+			session.save_to_json();
+		}
 	}
 }
 

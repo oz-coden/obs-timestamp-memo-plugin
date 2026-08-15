@@ -18,6 +18,7 @@ signals:
 private slots:
 	void onPickColor(int index);
 	void onSaveClicked();
+	void onResetDefaultsClicked();
 
 private:
 	void load_values();

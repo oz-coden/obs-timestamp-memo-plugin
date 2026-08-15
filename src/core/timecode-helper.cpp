@@ -106,6 +106,38 @@ std::string TimecodeHelper::ms_to_smpte(uint64_t ms, const VideoFrameRate &fps, 
 	return frame_index_to_smpte(frame_index, fps, force_ndf);
 }
 
+uint64_t TimecodeHelper::smpte_to_frame_index(const std::string &timecode, const VideoFrameRate &fps)
+{
+	if (timecode.length() < 11)
+		return 0;
+
+	unsigned int hh = 0, mm = 0, ss = 0, ff = 0;
+	char sep = ':';
+	if (std::sscanf(timecode.c_str(), "%u:%u:%u%c%u", &hh, &mm, &ss, &sep, &ff) < 4) {
+		return 0;
+	}
+
+	double nominal_fps = std::round(fps.fps());
+	if (nominal_fps <= 0.0)
+		nominal_fps = 30.0;
+
+	bool is_df = (sep == ';' || sep == '.') || fps.is_drop_frame();
+
+	if (is_df) {
+		uint64_t drop_frames = (nominal_fps >= 50.0) ? 4 : 2;
+		uint64_t total_minutes = static_cast<uint64_t>(hh) * 60 + mm;
+		uint64_t total_frames = ((total_minutes * 60 + ss) * static_cast<uint64_t>(nominal_fps)) + ff;
+		uint64_t dropped = drop_frames * (total_minutes - (total_minutes / 10));
+		if (total_frames >= dropped) {
+			return total_frames - dropped;
+		}
+		return 0;
+	} else {
+		uint64_t base_fps = static_cast<uint64_t>(nominal_fps);
+		return (static_cast<uint64_t>(hh) * 3600 + static_cast<uint64_t>(mm) * 60 + ss) * base_fps + ff;
+	}
+}
+
 std::string TimecodeHelper::ms_to_timestamp_str(uint64_t ms, bool include_ms)
 {
 	uint64_t msec = ms % 1000;
