@@ -21,21 +21,7 @@ bool obs_module_load(void)
 	auto *main_win = static_cast<QMainWindow *>(obs_frontend_get_main_window());
 	g_dock_widget = new DockWidget(main_win);
 
-#if defined(_MSC_VER)
-#pragma warning(push)
-#pragma warning(disable : 4996)
-#elif defined(__clang__) || defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-
-	obs_frontend_add_dock(g_dock_widget);
-
-#if defined(_MSC_VER)
-#pragma warning(pop)
-#elif defined(__clang__) || defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
+	obs_frontend_add_dock_by_id("obs_timestamp_memo_dock", "Timestamp Memo & Markers", g_dock_widget);
 
 	obs_log(LOG_INFO, "[%s] loaded successfully", PLUGIN_NAME);
 	return true;

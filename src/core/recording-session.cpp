@@ -265,7 +265,7 @@ bool RecordingSession::load_from_json(const std::string &json_path)
 	uint32_t max_id = 0;
 	if (root.contains("markers") && root["markers"].isArray()) {
 		QJsonArray arr = root["markers"].toArray();
-		for (const auto &val : arr) {
+		for (const auto val : arr) {
 			if (val.isObject()) {
 				MemoMarker m = MemoMarker::from_json(val.toObject());
 				markers_.push_back(m);
