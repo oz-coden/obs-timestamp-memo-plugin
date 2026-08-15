@@ -33,34 +33,13 @@ public:
 	bool delete_marker(uint32_t marker_id);
 	void clear_markers();
 
-	bool is_active() const
-	{
-		return active_;
-	}
-	std::string video_path() const
-	{
-		return video_path_;
-	}
-	std::string session_id() const
-	{
-		return session_id_;
-	}
-	std::string started_at() const
-	{
-		return started_at_;
-	}
-	VideoFrameRate frame_rate() const
-	{
-		return fps_;
-	}
-	uint32_t width() const
-	{
-		return width_;
-	}
-	uint32_t height() const
-	{
-		return height_;
-	}
+	bool is_active() const { return active_; }
+	std::string video_path() const { return video_path_; }
+	std::string session_id() const { return session_id_; }
+	std::string started_at() const { return started_at_; }
+	VideoFrameRate frame_rate() const { return fps_; }
+	uint32_t width() const { return width_; }
+	uint32_t height() const { return height_; }
 	std::vector<MemoMarker> get_markers() const;
 
 	QJsonObject to_json() const;

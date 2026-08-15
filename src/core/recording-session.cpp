@@ -11,9 +11,7 @@
 #include <QJsonObject>
 #include <QUuid>
 
-RecordingSession::RecordingSession()
-{
-}
+RecordingSession::RecordingSession() {}
 
 RecordingSession::~RecordingSession()
 {
@@ -132,8 +130,8 @@ void RecordingSession::cleanup_cache_file()
 	}
 }
 
-MemoMarker RecordingSession::add_marker(uint64_t ms, int type_index, const std::string &label,
-					const std::string &color, const std::string &comment, bool is_paused)
+MemoMarker RecordingSession::add_marker(uint64_t ms, int type_index, const std::string &label, const std::string &color,
+					const std::string &comment, bool is_paused)
 {
 	std::lock_guard<std::mutex> lock(mutex_);
 

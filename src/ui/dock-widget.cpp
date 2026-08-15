@@ -46,9 +46,7 @@ DockWidget::DockWidget(QWidget *parent) : QDockWidget(parent)
 	refreshMarkerButtons();
 }
 
-DockWidget::~DockWidget()
-{
-}
+DockWidget::~DockWidget() {}
 
 void DockWidget::setup_ui()
 {
@@ -261,7 +259,7 @@ void DockWidget::onOpenJsonClicked()
 	}
 
 	QString path = QFileDialog::getOpenFileName(this, "Open Recording JSON", initial_dir,
-						   "JSON Files (*.json);;All Files (*.*)");
+						    "JSON Files (*.json);;All Files (*.*)");
 	if (path.isEmpty()) {
 		return;
 	}

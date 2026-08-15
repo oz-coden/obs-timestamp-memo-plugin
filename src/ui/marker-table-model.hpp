@@ -12,15 +12,7 @@ class MarkerTableModel : public QAbstractTableModel {
 	Q_OBJECT
 
 public:
-	enum Column {
-		Col_Id = 0,
-		Col_Timecode,
-		Col_Frame,
-		Col_Label,
-		Col_Comment,
-		Col_Status,
-		Col_Count
-	};
+	enum Column { Col_Id = 0, Col_Timecode, Col_Frame, Col_Label, Col_Comment, Col_Status, Col_Count };
 
 	explicit MarkerTableModel(QObject *parent = nullptr);
 
@@ -36,10 +28,7 @@ public:
 	void update_marker(const MemoMarker &marker);
 	void clear();
 
-	const std::vector<MemoMarker> &get_markers() const
-	{
-		return markers_;
-	}
+	const std::vector<MemoMarker> &get_markers() const { return markers_; }
 
 signals:
 	void markerCommentChanged(uint32_t marker_id, const QString &comment);

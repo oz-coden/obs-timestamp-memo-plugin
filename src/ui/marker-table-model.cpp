@@ -6,9 +6,7 @@
 #include <QPixmap>
 #include <QPainter>
 
-MarkerTableModel::MarkerTableModel(QObject *parent) : QAbstractTableModel(parent)
-{
-}
+MarkerTableModel::MarkerTableModel(QObject *parent) : QAbstractTableModel(parent) {}
 
 int MarkerTableModel::rowCount(const QModelIndex &parent) const
 {

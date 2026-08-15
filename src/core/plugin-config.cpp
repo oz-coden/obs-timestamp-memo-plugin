@@ -41,8 +41,10 @@ void PluginConfig::load()
 	settings.beginGroup("Markers");
 	for (int i = 0; i < 4; ++i) {
 		QString prefix = QString("marker_%1_").arg(i + 1);
-		QString label = settings.value(prefix + "label", QString::fromStdString(marker_types[i].label)).toString();
-		QString color = settings.value(prefix + "color", QString::fromStdString(marker_types[i].color)).toString();
+		QString label =
+			settings.value(prefix + "label", QString::fromStdString(marker_types[i].label)).toString();
+		QString color =
+			settings.value(prefix + "color", QString::fromStdString(marker_types[i].color)).toString();
 		marker_types[i].label = label.toStdString();
 		marker_types[i].color = color.toStdString();
 	}

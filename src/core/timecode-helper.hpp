@@ -7,10 +7,7 @@ struct VideoFrameRate {
 	uint32_t num = 60;
 	uint32_t den = 1;
 
-	double fps() const
-	{
-		return den == 0 ? 0.0 : static_cast<double>(num) / static_cast<double>(den);
-	}
+	double fps() const { return den == 0 ? 0.0 : static_cast<double>(num) / static_cast<double>(den); }
 
 	bool is_drop_frame() const;
 };

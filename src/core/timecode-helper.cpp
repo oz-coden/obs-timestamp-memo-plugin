@@ -67,8 +67,7 @@ std::string TimecodeHelper::frame_index_to_smpte(uint64_t frame_index, const Vid
 
 		uint64_t adjusted_frame = frame_index;
 		if (m > drop_frames) {
-			adjusted_frame +=
-				(drop_frames * 9 * d) + drop_frames * ((m - drop_frames) / frames_per_minute);
+			adjusted_frame += (drop_frames * 9 * d) + drop_frames * ((m - drop_frames) / frames_per_minute);
 		} else {
 			adjusted_frame += (drop_frames * 9 * d);
 		}
@@ -148,9 +147,9 @@ std::string TimecodeHelper::ms_to_timestamp_str(uint64_t ms, bool include_ms)
 
 	char buf[32];
 	if (include_ms) {
-		std::snprintf(buf, sizeof(buf), "%02llu:%02llu:%02llu.%03llu",
-			      static_cast<unsigned long long>(hour), static_cast<unsigned long long>(min),
-			      static_cast<unsigned long long>(sec), static_cast<unsigned long long>(msec));
+		std::snprintf(buf, sizeof(buf), "%02llu:%02llu:%02llu.%03llu", static_cast<unsigned long long>(hour),
+			      static_cast<unsigned long long>(min), static_cast<unsigned long long>(sec),
+			      static_cast<unsigned long long>(msec));
 	} else {
 		std::snprintf(buf, sizeof(buf), "%02llu:%02llu:%02llu", static_cast<unsigned long long>(hour),
 			      static_cast<unsigned long long>(min), static_cast<unsigned long long>(sec));

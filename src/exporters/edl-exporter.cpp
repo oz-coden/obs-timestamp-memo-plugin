@@ -53,8 +53,8 @@ bool EdlExporter::export_to_file(const RecordingSession &session, const std::str
 		uint64_t next_frame = m.frame_index + 1;
 		std::string tc_out = TimecodeHelper::frame_index_to_smpte(next_frame, fps, !is_df);
 
-		out << std::setfill('0') << std::setw(3) << event_num++ << "  AX       V     C        " << tc_in
-		    << " " << tc_out << " " << tc_in << " " << tc_out << "\n";
+		out << std::setfill('0') << std::setw(3) << event_num++ << "  AX       V     C        " << tc_in << " "
+		    << tc_out << " " << tc_in << " " << tc_out << "\n";
 
 		if (!clip_name.empty()) {
 			out << "* FROM CLIP NAME: " << clean_edl_text(clip_name) << "\n";

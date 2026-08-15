@@ -23,10 +23,7 @@ public:
 	bool trigger_marker(int type_index, const std::string &custom_comment = "");
 	bool add_memo_marker(const std::string &text, int type_index = 0);
 
-	RecordingSession &session()
-	{
-		return session_;
-	}
+	RecordingSession &session() { return session_; }
 
 	bool is_recording() const;
 	bool is_paused() const;

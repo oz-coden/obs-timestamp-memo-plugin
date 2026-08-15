@@ -19,9 +19,7 @@ ObsBridge &ObsBridge::instance()
 	return inst;
 }
 
-ObsBridge::ObsBridge()
-{
-}
+ObsBridge::ObsBridge() {}
 
 ObsBridge::~ObsBridge()
 {
@@ -112,8 +110,7 @@ uint64_t ObsBridge::get_current_record_ms() const
 	obs_output_release(output);
 
 	if (total_frames > 0) {
-		return TimecodeHelper::frame_index_to_ms(static_cast<uint64_t>(total_frames),
-							 get_current_frame_rate());
+		return TimecodeHelper::frame_index_to_ms(static_cast<uint64_t>(total_frames), get_current_frame_rate());
 	}
 	return 0;
 }
