@@ -2,8 +2,8 @@
 
 #include <fstream>
 #include <sstream>
-#include <QFileInfo>
 #include <QDir>
+#include <QFileInfo>
 
 namespace {
 std::string escape_csv(const std::string &str)
@@ -46,6 +46,8 @@ bool CsvExporter::export_to_file(const RecordingSession &session, const std::str
 		    << escape_csv(m.color) << "," << (m.is_paused ? "\"PAUSED\"" : "\"NORMAL\"") << "\n";
 	}
 
+	out.flush();
+	bool ok = !out.fail() && !out.bad();
 	out.close();
-	return true;
+	return ok;
 }

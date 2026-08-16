@@ -46,7 +46,7 @@ public:
 
 private:
 	std::string get_cache_file_path() const;
-	void flush_marker_to_cache(const MemoMarker &marker);
+	void flush_journal_entry(const QJsonObject &entry);
 	void cleanup_cache_file();
 
 	mutable std::mutex mutex_;

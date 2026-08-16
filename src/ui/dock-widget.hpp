@@ -21,6 +21,7 @@ public:
 
 public slots:
 	void refreshMarkerButtons();
+	void clear_ui_markers();
 
 protected:
 	void keyPressEvent(QKeyEvent *event) override;
@@ -32,7 +33,7 @@ private slots:
 	void onExportClicked();
 	void onSettingsClicked();
 	void onClearClicked();
-	void onMarkerCommentChanged(uint32_t marker_id, const QString &comment);
+	void onMarkerDataChanged(uint32_t marker_id, const QString &label, const QString &comment);
 	void onContextMenuRequested(const QPoint &pos);
 	void updateLiveTimer();
 

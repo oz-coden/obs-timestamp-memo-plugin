@@ -97,6 +97,8 @@ bool XmlExporter::export_to_file(const RecordingSession &session, const std::str
 	out << "  </sequence>\n";
 	out << "</xmeml>\n";
 
+	out.flush();
+	bool ok = !out.fail() && !out.bad();
 	out.close();
-	return true;
+	return ok;
 }

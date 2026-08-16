@@ -32,6 +32,7 @@ public:
 
 signals:
 	void markerCommentChanged(uint32_t marker_id, const QString &comment);
+	void markerDataChanged(uint32_t marker_id, const QString &label, const QString &comment);
 
 private:
 	std::vector<MemoMarker> markers_;

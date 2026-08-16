@@ -45,6 +45,8 @@ bool SrtExporter::export_to_file(const RecordingSession &session, const std::str
 		out << text << "\n\n";
 	}
 
+	out.flush();
+	bool ok = !out.fail() && !out.bad();
 	out.close();
-	return true;
+	return ok;
 }

@@ -2,9 +2,6 @@
 
 #include <QBrush>
 #include <QColor>
-#include <QFont>
-#include <QPixmap>
-#include <QPainter>
 
 MarkerTableModel::MarkerTableModel(QObject *parent) : QAbstractTableModel(parent) {}
 
@@ -32,41 +29,49 @@ QVariant MarkerTableModel::data(const QModelIndex &index, int role) const
 	if (role == Qt::DisplayRole || role == Qt::EditRole) {
 		switch (index.column()) {
 		case Col_Id:
-			return QString::number(m.id);
+			return static_cast<uint>(m.id);
 		case Col_Timecode:
 			return QString::fromStdString(m.active_timecode(fps_));
 		case Col_Frame:
-			return QString::number(m.frame_index);
+			return static_cast<qulonglong>(m.frame_index);
 		case Col_Label:
 			return QString::fromStdString(m.label);
 		case Col_Comment:
 			return QString::fromStdString(m.comment);
 		case Col_Status:
-			return m.is_paused ? QString("Paused") : QString("Normal");
+			return m.is_paused ? "PAUSED" : "REC";
 		default:
 			return QVariant();
 		}
 	} else if (role == Qt::ForegroundRole) {
-		if (index.column() == Col_Status && m.is_paused) {
-			return QBrush(QColor("#e67e22"));
+		if (index.column() == Col_Status) {
+			if (m.is_paused) {
+				return QBrush(QColor("#f39c12"));
+			} else {
+				return QBrush(QColor("#2ecc71"));
+			}
 		}
-	} else if (role == Qt::DecorationRole) {
-		if (index.column() == Col_Label) {
-			QPixmap pix(12, 12);
-			pix.fill(Qt::transparent);
-			QPainter painter(&pix);
-			painter.setRenderHint(QPainter::Antialiasing);
-			painter.setBrush(QColor(QString::fromStdString(m.color)));
-			painter.setPen(Qt::NoPen);
-			painter.drawEllipse(0, 0, 12, 12);
-			return pix;
+	} else if (role == Qt::BackgroundRole) {
+		if (index.column() == Col_Label && !m.color.empty()) {
+			QColor c(QString::fromStdString(m.color));
+			if (c.isValid()) {
+				c.setAlpha(45);
+				return QBrush(c);
+			}
 		}
 	} else if (role == Qt::TextAlignmentRole) {
-		if (index.column() == Col_Id || index.column() == Col_Frame || index.column() == Col_Status) {
+		switch (index.column()) {
+		case Col_Id:
+		case Col_Frame:
+		case Col_Status:
 			return static_cast<int>(Qt::AlignCenter);
-		}
-		if (index.column() == Col_Timecode) {
-			return static_cast<int>(Qt::AlignVCenter | Qt::AlignLeft);
+		case Col_Timecode:
+			return static_cast<int>(Qt::AlignRight | Qt::AlignVCenter);
+		case Col_Label:
+		case Col_Comment:
+			return static_cast<int>(Qt::AlignLeft | Qt::AlignVCenter);
+		default:
+			return static_cast<int>(Qt::AlignLeft | Qt::AlignVCenter);
 		}
 	}
 
@@ -75,28 +80,24 @@ QVariant MarkerTableModel::data(const QModelIndex &index, int role) const
 
 QVariant MarkerTableModel::headerData(int section, Qt::Orientation orientation, int role) const
 {
-	if (orientation != Qt::Horizontal)
-		return QVariant();
-
-	if (role == Qt::DisplayRole) {
+	if (orientation == Qt::Horizontal && role == Qt::DisplayRole) {
 		switch (section) {
 		case Col_Id:
-			return QString("#");
+			return "#";
 		case Col_Timecode:
-			return QString("Timecode");
+			return "Timecode";
 		case Col_Frame:
-			return QString("Frame");
+			return "Frame";
 		case Col_Label:
-			return QString("Type");
+			return "Label";
 		case Col_Comment:
-			return QString("Memo / Comment");
+			return "Comment / Memo";
 		case Col_Status:
-			return QString("Status");
+			return "Status";
 		default:
 			return QVariant();
 		}
 	}
-
 	return QVariant();
 }
 
@@ -123,10 +124,12 @@ bool MarkerTableModel::setData(const QModelIndex &index, const QVariant &value, 
 		m.comment = value.toString().toStdString();
 		emit dataChanged(index, index, {Qt::DisplayRole, Qt::EditRole});
 		emit markerCommentChanged(m.id, value.toString());
+		emit markerDataChanged(m.id, QString::fromStdString(m.label), QString::fromStdString(m.comment));
 		return true;
 	} else if (index.column() == Col_Label) {
 		m.label = value.toString().toStdString();
 		emit dataChanged(index, index, {Qt::DisplayRole, Qt::EditRole});
+		emit markerDataChanged(m.id, QString::fromStdString(m.label), QString::fromStdString(m.comment));
 		return true;
 	}
 
@@ -143,10 +146,10 @@ void MarkerTableModel::set_markers(const std::vector<MemoMarker> &markers, const
 
 void MarkerTableModel::add_marker(const MemoMarker &marker, const VideoFrameRate &fps)
 {
-	fps_ = fps;
 	int row = static_cast<int>(markers_.size());
 	beginInsertRows(QModelIndex(), row, row);
 	markers_.push_back(marker);
+	fps_ = fps;
 	endInsertRows();
 }
 

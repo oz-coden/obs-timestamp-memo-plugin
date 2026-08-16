@@ -8,8 +8,8 @@
 #include "xml-exporter.hpp"
 
 #include <plugin-support.h>
-#include <QFileInfo>
 #include <QDir>
+#include <QFileInfo>
 #include <obs-frontend-api.h>
 #include <obs.h>
 
@@ -51,6 +51,11 @@ void ObsBridge::initialize()
 
 	initialized_ = true;
 	obs_log(LOG_INFO, "[Timestamp Memo] ObsBridge initialized");
+
+	if (obs_frontend_recording_active()) {
+		obs_log(LOG_INFO, "[Timestamp Memo] Active recording detected on init, attaching session...");
+		handle_recording_started();
+	}
 }
 
 void ObsBridge::shutdown()
@@ -200,31 +205,51 @@ void ObsBridge::perform_auto_export(const std::string &base_video_path)
 	QString base_name = fi.completeBaseName();
 
 	const auto &auto_cfg = PluginConfig::instance().auto_export;
+	bool all_success = true;
 
 	if (auto_cfg.json) {
 		JsonExporter exp;
 		std::string path = dir.filePath(base_name + ".json").toStdString();
-		exp.export_to_file(session_, path);
+		if (!exp.export_to_file(session_, path)) {
+			obs_log(LOG_ERROR, "[Timestamp Memo] Failed to auto-export JSON to: %s", path.c_str());
+			all_success = false;
+		}
 	}
 	if (auto_cfg.csv) {
 		CsvExporter exp;
 		std::string path = dir.filePath(base_name + ".csv").toStdString();
-		exp.export_to_file(session_, path);
+		if (!exp.export_to_file(session_, path)) {
+			obs_log(LOG_ERROR, "[Timestamp Memo] Failed to auto-export CSV to: %s", path.c_str());
+			all_success = false;
+		}
 	}
 	if (auto_cfg.edl) {
 		EdlExporter exp;
 		std::string path = dir.filePath(base_name + ".edl").toStdString();
-		exp.export_to_file(session_, path);
+		if (!exp.export_to_file(session_, path)) {
+			obs_log(LOG_ERROR, "[Timestamp Memo] Failed to auto-export EDL to: %s", path.c_str());
+			all_success = false;
+		}
 	}
 	if (auto_cfg.srt) {
 		SrtExporter exp;
 		std::string path = dir.filePath(base_name + ".srt").toStdString();
-		exp.export_to_file(session_, path);
+		if (!exp.export_to_file(session_, path)) {
+			obs_log(LOG_ERROR, "[Timestamp Memo] Failed to auto-export SRT to: %s", path.c_str());
+			all_success = false;
+		}
 	}
 	if (auto_cfg.xml) {
 		XmlExporter exp;
 		std::string path = dir.filePath(base_name + ".xml").toStdString();
-		exp.export_to_file(session_, path);
+		if (!exp.export_to_file(session_, path)) {
+			obs_log(LOG_ERROR, "[Timestamp Memo] Failed to auto-export XML to: %s", path.c_str());
+			all_success = false;
+		}
+	}
+
+	if (!all_success) {
+		StatusNotifier::instance().notify("Warning: Some auto-export formats failed to save!", 5000);
 	}
 }
 
@@ -263,12 +288,18 @@ void ObsBridge::handle_recording_stopped()
 	}
 
 	std::string json_path;
-	session_.stop_session(&json_path);
+	bool save_ok = session_.stop_session(&json_path);
 
 	perform_auto_export(video_path);
 
 	emit recordingStopped(QString::fromStdString(json_path));
-	StatusNotifier::instance().notify("Recording stopped. Markers saved.", 3000);
+
+	if (save_ok) {
+		StatusNotifier::instance().notify("Recording stopped. Markers saved.", 3000);
+	} else {
+		StatusNotifier::instance().notify("Recording stopped. Warning: Failed to save JSON! Cache preserved.",
+						  5000);
+	}
 }
 
 void ObsBridge::handle_recording_file_changed()
@@ -310,11 +341,9 @@ void ObsBridge::on_frontend_event(enum obs_frontend_event event, void *private_d
 	case OBS_FRONTEND_EVENT_RECORDING_STOPPED:
 		self->handle_recording_stopped();
 		break;
-#if defined(OBS_FRONTEND_EVENT_RECORDING_FILE_CHANGED)
 	case OBS_FRONTEND_EVENT_RECORDING_FILE_CHANGED:
 		self->handle_recording_file_changed();
 		break;
-#endif
 	default:
 		break;
 	}
