@@ -37,9 +37,9 @@
         }
     },
     "name": "obs-timestamp-memo",
-    "displayName": "Timestamp Memo Plugin",
+    "displayName": "Timestamp Memo Plugin for OBS",
     "version": "1.0.0",
     "author": "oz-coden",
     "website": "https://github.com/oz-coden/obs-timestamp-memo-plugin",
-    "email": "white@example.com"
+    "email": "mail@oz-coden.com"
 }
