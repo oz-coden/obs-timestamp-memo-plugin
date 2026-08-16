@@ -232,6 +232,7 @@ void DockWidget::updateLiveTimer()
 {
 	auto &bridge = ObsBridge::instance();
 	if (bridge.is_recording()) {
+		bridge.check_recording_file_changed();
 		uint64_t ms = bridge.get_current_record_ms();
 		lbl_live_time_->setText(QString::fromStdString(TimecodeHelper::ms_to_timestamp_str(ms, true)));
 	}

@@ -169,6 +169,8 @@ bool ObsBridge::trigger_marker(int type_index, const std::string &custom_comment
 		return false;
 	}
 
+	check_recording_file_changed();
+
 	if (type_index < 0 || type_index >= 4) {
 		type_index = 0;
 	}
@@ -250,6 +252,19 @@ void ObsBridge::perform_auto_export(const std::string &base_video_path)
 
 	if (!all_success) {
 		StatusNotifier::instance().notify("Warning: Some auto-export formats failed to save!", 5000);
+	}
+}
+
+void ObsBridge::check_recording_file_changed()
+{
+	if (!is_recording())
+		return;
+
+	std::string current_path = get_current_record_file_path();
+	if (!current_path.empty() && !session_.video_path().empty() && current_path != session_.video_path()) {
+		obs_log(LOG_INFO, "[Timestamp Memo] File change detected: '%s' -> '%s'", session_.video_path().c_str(),
+			current_path.c_str());
+		handle_recording_file_changed();
 	}
 }
 
@@ -340,9 +355,6 @@ void ObsBridge::on_frontend_event(enum obs_frontend_event event, void *private_d
 		break;
 	case OBS_FRONTEND_EVENT_RECORDING_STOPPED:
 		self->handle_recording_stopped();
-		break;
-	case OBS_FRONTEND_EVENT_RECORDING_FILE_CHANGED:
-		self->handle_recording_file_changed();
 		break;
 	default:
 		break;

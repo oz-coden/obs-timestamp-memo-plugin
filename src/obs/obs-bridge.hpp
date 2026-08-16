@@ -33,6 +33,7 @@ public:
 	void get_video_dimension(uint32_t &width, uint32_t &height) const;
 
 	void perform_auto_export(const std::string &base_video_path);
+	void check_recording_file_changed();
 
 signals:
 	void markerAdded(const MemoMarker &marker);
