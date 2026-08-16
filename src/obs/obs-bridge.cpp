@@ -209,14 +209,6 @@ void ObsBridge::perform_auto_export(const std::string &base_video_path)
 	const auto &auto_cfg = PluginConfig::instance().auto_export;
 	bool all_success = true;
 
-	if (auto_cfg.json) {
-		JsonExporter exp;
-		std::string path = dir.filePath(base_name + ".json").toStdString();
-		if (!exp.export_to_file(session_, path)) {
-			obs_log(LOG_ERROR, "[Timestamp Memo] Failed to auto-export JSON to: %s", path.c_str());
-			all_success = false;
-		}
-	}
 	if (auto_cfg.csv) {
 		CsvExporter exp;
 		std::string path = dir.filePath(base_name + ".csv").toStdString();
@@ -321,7 +313,13 @@ void ObsBridge::handle_recording_file_changed()
 {
 	std::string old_video_path = session_.video_path();
 	std::string old_json_path;
-	session_.stop_session(&old_json_path);
+	bool save_ok = session_.stop_session(&old_json_path);
+	if (!save_ok) {
+		obs_log(LOG_ERROR, "[Timestamp Memo] Failed to save previous segment JSON on file split: %s",
+			old_json_path.c_str());
+		StatusNotifier::instance().notify("Warning: Failed to save previous segment JSON! Cache preserved.",
+						  5000);
+	}
 	perform_auto_export(old_video_path);
 
 	std::string new_path = get_current_record_file_path();

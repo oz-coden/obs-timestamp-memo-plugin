@@ -2,19 +2,25 @@
 #include "timecode-helper.hpp"
 
 #include <algorithm>
-#include <fstream>
 #include <QDir>
 #include <QFileInfo>
+#include <QSaveFile>
+#include <QTextStream>
 
 bool SrtExporter::export_to_file(const RecordingSession &session, const std::string &output_path)
 {
 	QFileInfo fi(QString::fromStdString(output_path));
 	fi.dir().mkpath(".");
 
-	std::ofstream out(output_path, std::ios::out | std::ios::trunc);
-	if (!out.is_open()) {
+	QSaveFile file(QString::fromStdString(output_path));
+	if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
 		return false;
 	}
+
+	QTextStream out(&file);
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+	out.setCodec("UTF-8");
+#endif
 
 	// UTF-8 BOM
 	out << "\xEF\xBB\xBF";
@@ -35,18 +41,21 @@ bool SrtExporter::export_to_file(const RecordingSession &session, const std::str
 		}
 
 		out << cue_index++ << "\n";
-		out << TimecodeHelper::ms_to_srt_time(start_ms) << " --> " << TimecodeHelper::ms_to_srt_time(end_ms)
-		    << "\n";
+		out << QString::fromStdString(TimecodeHelper::ms_to_srt_time(start_ms)) << " --> "
+		    << QString::fromStdString(TimecodeHelper::ms_to_srt_time(end_ms)) << "\n";
 
-		std::string text = "[" + m.label + "]";
+		QString text = "[" + QString::fromStdString(m.label) + "]";
 		if (!m.comment.empty()) {
-			text += " " + m.comment;
+			text += " " + QString::fromStdString(m.comment);
 		}
 		out << text << "\n\n";
 	}
 
 	out.flush();
-	bool ok = !out.fail() && !out.bad();
-	out.close();
-	return ok;
+	if (out.status() != QTextStream::Ok) {
+		file.cancelWriting();
+		return false;
+	}
+
+	return file.commit();
 }

@@ -1,39 +1,22 @@
 #include "xml-exporter.hpp"
 
 #include <cmath>
-#include <fstream>
 #include <QDir>
 #include <QFileInfo>
+#include <QSaveFile>
 #include <QString>
+#include <QTextStream>
 
 namespace {
-std::string escape_xml(const std::string &str)
+QString escape_xml_qstring(const std::string &str)
 {
-	std::string res;
-	res.reserve(str.size() * 11 / 10);
-	for (char c : str) {
-		switch (c) {
-		case '&':
-			res += "&amp;";
-			break;
-		case '<':
-			res += "&lt;";
-			break;
-		case '>':
-			res += "&gt;";
-			break;
-		case '\"':
-			res += "&quot;";
-			break;
-		case '\'':
-			res += "&apos;";
-			break;
-		default:
-			res += c;
-			break;
-		}
-	}
-	return res;
+	QString qstr = QString::fromStdString(str);
+	qstr.replace('&', "&amp;");
+	qstr.replace('<', "&lt;");
+	qstr.replace('>', "&gt;");
+	qstr.replace('\"', "&quot;");
+	qstr.replace('\'', "&apos;");
+	return qstr;
 }
 } // namespace
 
@@ -42,14 +25,19 @@ bool XmlExporter::export_to_file(const RecordingSession &session, const std::str
 	QFileInfo fi(QString::fromStdString(output_path));
 	fi.dir().mkpath(".");
 
-	std::ofstream out(output_path, std::ios::out | std::ios::trunc);
-	if (!out.is_open()) {
+	QSaveFile file(QString::fromStdString(output_path));
+	if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
 		return false;
 	}
 
+	QTextStream out(&file);
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+	out.setCodec("UTF-8");
+#endif
+
 	QFileInfo src_fi(QString::fromStdString(session.video_path()));
-	std::string seq_name = src_fi.completeBaseName().toStdString();
-	if (seq_name.empty()) {
+	QString seq_name = src_fi.completeBaseName();
+	if (seq_name.isEmpty()) {
 		seq_name = "OBS Recording Markers";
 	}
 
@@ -63,7 +51,7 @@ bool XmlExporter::export_to_file(const RecordingSession &session, const std::str
 	out << "<!DOCTYPE xmeml>\n";
 	out << "<xmeml version=\"4\">\n";
 	out << "  <sequence id=\"sequence-1\">\n";
-	out << "    <name>" << escape_xml(seq_name) << "</name>\n";
+	out << "    <name>" << escape_xml_qstring(seq_name.toStdString()) << "</name>\n";
 	out << "    <rate>\n";
 	out << "      <timebase>" << timebase << "</timebase>\n";
 	out << "      <ntsc>" << (is_ntsc ? "TRUE" : "FALSE") << "</ntsc>\n";
@@ -86,11 +74,11 @@ bool XmlExporter::export_to_file(const RecordingSession &session, const std::str
 	auto markers = session.get_markers();
 	for (const auto &m : markers) {
 		out << "    <marker>\n";
-		out << "      <name>" << escape_xml(m.label) << "</name>\n";
-		out << "      <comment>" << escape_xml(m.comment) << "</comment>\n";
+		out << "      <name>" << escape_xml_qstring(m.label) << "</name>\n";
+		out << "      <comment>" << escape_xml_qstring(m.comment) << "</comment>\n";
 		out << "      <in>" << m.frame_index << "</in>\n";
 		out << "      <out>" << (m.frame_index + 1) << "</out>\n";
-		out << "      <color>" << escape_xml(m.color) << "</color>\n";
+		out << "      <color>" << escape_xml_qstring(m.color) << "</color>\n";
 		out << "    </marker>\n";
 	}
 
@@ -98,7 +86,10 @@ bool XmlExporter::export_to_file(const RecordingSession &session, const std::str
 	out << "</xmeml>\n";
 
 	out.flush();
-	bool ok = !out.fail() && !out.bad();
-	out.close();
-	return ok;
+	if (out.status() != QTextStream::Ok) {
+		file.cancelWriting();
+		return false;
+	}
+
+	return file.commit();
 }

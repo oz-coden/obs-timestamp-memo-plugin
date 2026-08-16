@@ -1,23 +1,16 @@
 #include "csv-exporter.hpp"
 
-#include <fstream>
-#include <sstream>
 #include <QDir>
 #include <QFileInfo>
+#include <QSaveFile>
+#include <QTextStream>
 
 namespace {
-std::string escape_csv(const std::string &str)
+QString escape_csv_field(const std::string &str)
 {
-	std::string res = "\"";
-	for (char c : str) {
-		if (c == '"') {
-			res += "\"\"";
-		} else {
-			res += c;
-		}
-	}
-	res += "\"";
-	return res;
+	QString qstr = QString::fromStdString(str);
+	qstr.replace("\"", "\"\"");
+	return "\"" + qstr + "\"";
 }
 } // namespace
 
@@ -26,10 +19,15 @@ bool CsvExporter::export_to_file(const RecordingSession &session, const std::str
 	QFileInfo fi(QString::fromStdString(output_path));
 	fi.dir().mkpath(".");
 
-	std::ofstream out(output_path, std::ios::out | std::ios::trunc);
-	if (!out.is_open()) {
+	QSaveFile file(QString::fromStdString(output_path));
+	if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
 		return false;
 	}
+
+	QTextStream out(&file);
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+	out.setCodec("UTF-8");
+#endif
 
 	// UTF-8 BOM
 	out << "\xEF\xBB\xBF";
@@ -40,14 +38,18 @@ bool CsvExporter::export_to_file(const RecordingSession &session, const std::str
 	auto fps = session.frame_rate();
 
 	for (const auto &m : markers) {
-		std::string tc = m.active_timecode(fps);
-		out << m.id << "," << escape_csv(tc) << "," << escape_csv(tc) << "," << m.frame_index << ","
-		    << m.timestamp_ms << "," << escape_csv(m.label) << "," << escape_csv(m.comment) << ","
-		    << escape_csv(m.color) << "," << (m.is_paused ? "\"PAUSED\"" : "\"NORMAL\"") << "\n";
+		QString tc = QString::fromStdString(m.active_timecode(fps));
+		QString esc_tc = "\"" + tc + "\"";
+		out << m.id << "," << esc_tc << "," << esc_tc << "," << m.frame_index << "," << m.timestamp_ms << ","
+		    << escape_csv_field(m.label) << "," << escape_csv_field(m.comment) << ","
+		    << escape_csv_field(m.color) << "," << (m.is_paused ? "\"PAUSED\"" : "\"NORMAL\"") << "\n";
 	}
 
 	out.flush();
-	bool ok = !out.fail() && !out.bad();
-	out.close();
-	return ok;
+	if (out.status() != QTextStream::Ok) {
+		file.cancelWriting();
+		return false;
+	}
+
+	return file.commit();
 }
