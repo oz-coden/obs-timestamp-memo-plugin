@@ -28,7 +28,7 @@ RecordingSession::~RecordingSession()
 bool RecordingSession::start_session(const std::string &video_path, const VideoFrameRate &fps, uint32_t width,
 				     uint32_t height)
 {
-	std::lock_guard<std::mutex> lock(mutex_);
+	std::lock_guard<std::recursive_mutex> lock(mutex_);
 
 	if (cache_stream_) {
 		cache_stream_->flush();
@@ -87,7 +87,7 @@ bool RecordingSession::start_session(const std::string &video_path, const VideoF
 
 bool RecordingSession::stop_session(std::string *out_json_path)
 {
-	std::lock_guard<std::mutex> lock(mutex_);
+	std::lock_guard<std::recursive_mutex> lock(mutex_);
 
 	if (!active_) {
 		return false;
@@ -161,7 +161,7 @@ void RecordingSession::cleanup_cache_file()
 MemoMarker RecordingSession::add_marker(uint64_t ms, int type_index, const std::string &label, const std::string &color,
 					const std::string &comment, bool is_paused)
 {
-	std::lock_guard<std::mutex> lock(mutex_);
+	std::lock_guard<std::recursive_mutex> lock(mutex_);
 
 	MemoMarker marker =
 		MemoMarker::create(next_marker_id_++, ms, fps_, type_index, label, color, comment, is_paused);
@@ -178,7 +178,7 @@ MemoMarker RecordingSession::add_marker(uint64_t ms, int type_index, const std::
 bool RecordingSession::update_marker(uint32_t marker_id, const std::string &label, const std::string &color,
 				     const std::string &comment)
 {
-	std::lock_guard<std::mutex> lock(mutex_);
+	std::lock_guard<std::recursive_mutex> lock(mutex_);
 	for (auto &m : markers_) {
 		if (m.id == marker_id) {
 			m.label = label;
@@ -201,7 +201,7 @@ bool RecordingSession::update_marker(uint32_t marker_id, const std::string &labe
 
 bool RecordingSession::delete_marker(uint32_t marker_id)
 {
-	std::lock_guard<std::mutex> lock(mutex_);
+	std::lock_guard<std::recursive_mutex> lock(mutex_);
 	for (auto it = markers_.begin(); it != markers_.end(); ++it) {
 		if (it->id == marker_id) {
 			markers_.erase(it);
@@ -219,7 +219,7 @@ bool RecordingSession::delete_marker(uint32_t marker_id)
 
 void RecordingSession::clear_markers()
 {
-	std::lock_guard<std::mutex> lock(mutex_);
+	std::lock_guard<std::recursive_mutex> lock(mutex_);
 	markers_.clear();
 	next_marker_id_ = 1;
 
@@ -230,55 +230,55 @@ void RecordingSession::clear_markers()
 
 bool RecordingSession::is_active() const
 {
-	std::lock_guard<std::mutex> lock(mutex_);
+	std::lock_guard<std::recursive_mutex> lock(mutex_);
 	return active_;
 }
 
 std::string RecordingSession::video_path() const
 {
-	std::lock_guard<std::mutex> lock(mutex_);
+	std::lock_guard<std::recursive_mutex> lock(mutex_);
 	return video_path_;
 }
 
 std::string RecordingSession::session_id() const
 {
-	std::lock_guard<std::mutex> lock(mutex_);
+	std::lock_guard<std::recursive_mutex> lock(mutex_);
 	return session_id_;
 }
 
 std::string RecordingSession::started_at() const
 {
-	std::lock_guard<std::mutex> lock(mutex_);
+	std::lock_guard<std::recursive_mutex> lock(mutex_);
 	return started_at_;
 }
 
 VideoFrameRate RecordingSession::frame_rate() const
 {
-	std::lock_guard<std::mutex> lock(mutex_);
+	std::lock_guard<std::recursive_mutex> lock(mutex_);
 	return fps_;
 }
 
 uint32_t RecordingSession::width() const
 {
-	std::lock_guard<std::mutex> lock(mutex_);
+	std::lock_guard<std::recursive_mutex> lock(mutex_);
 	return width_;
 }
 
 uint32_t RecordingSession::height() const
 {
-	std::lock_guard<std::mutex> lock(mutex_);
+	std::lock_guard<std::recursive_mutex> lock(mutex_);
 	return height_;
 }
 
 std::vector<MemoMarker> RecordingSession::get_markers() const
 {
-	std::lock_guard<std::mutex> lock(mutex_);
+	std::lock_guard<std::recursive_mutex> lock(mutex_);
 	return markers_;
 }
 
 QJsonObject RecordingSession::to_json() const
 {
-	std::lock_guard<std::mutex> lock(mutex_);
+	std::lock_guard<std::recursive_mutex> lock(mutex_);
 
 	QJsonObject root;
 	root["schema_version"] = "1.0.0";
@@ -309,9 +309,10 @@ QJsonObject RecordingSession::to_json() const
 
 bool RecordingSession::save_to_json(const std::string &target_json_path)
 {
+	std::lock_guard<std::recursive_mutex> lock(mutex_);
+
 	std::string path = target_json_path;
 	if (path.empty()) {
-		std::lock_guard<std::mutex> lock(mutex_);
 		if (video_path_.empty()) {
 			return false;
 		}
@@ -341,7 +342,7 @@ bool RecordingSession::save_to_json(const std::string &target_json_path)
 
 bool RecordingSession::load_from_json(const std::string &json_path)
 {
-	std::lock_guard<std::mutex> lock(mutex_);
+	std::lock_guard<std::recursive_mutex> lock(mutex_);
 
 	if (active_) {
 		return false;
@@ -488,7 +489,7 @@ bool RecordingSession::recover_from_cache(const std::string &cache_path, Recordi
 		return false;
 	}
 
-	std::lock_guard<std::mutex> lock(out_session.mutex_);
+	std::lock_guard<std::recursive_mutex> lock(out_session.mutex_);
 	out_session.session_id_ = temp.session_id_;
 	out_session.video_path_ = temp.video_path_;
 	out_session.started_at_ = temp.started_at_;

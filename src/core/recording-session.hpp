@@ -50,7 +50,7 @@ private:
 	void flush_journal_entry(const QJsonObject &entry);
 	void cleanup_cache_file();
 
-	mutable std::mutex mutex_;
+	mutable std::recursive_mutex mutex_;
 	bool active_ = false;
 	std::string video_path_;
 	std::string session_id_;
