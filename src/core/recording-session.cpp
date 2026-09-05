@@ -116,7 +116,7 @@ bool RecordingSession::stop_session(std::string *out_json_path)
 	}
 
 	if (save_ok) {
-		cleanup_cache_file();
+		cleanup_cache_file(true);
 	}
 
 	if (out_json_path) {
@@ -146,9 +146,9 @@ void RecordingSession::flush_journal_entry(const QJsonObject &entry)
 	cache_stream_->flush();
 }
 
-void RecordingSession::cleanup_cache_file()
+void RecordingSession::cleanup_cache_file(bool force)
 {
-	if (PluginConfig::instance().keep_tmp_cache_on_crash) {
+	if (!force && PluginConfig::instance().keep_tmp_cache_on_crash) {
 		return;
 	}
 
@@ -238,6 +238,55 @@ std::string RecordingSession::video_path() const
 {
 	std::lock_guard<std::recursive_mutex> lock(mutex_);
 	return video_path_;
+}
+
+void RecordingSession::set_video_path(const std::string &path)
+{
+	std::lock_guard<std::recursive_mutex> lock(mutex_);
+	if (path.empty() || path == video_path_) {
+		return;
+	}
+
+	video_path_ = path;
+
+	if (!cache_file_ || !cache_file_->isOpen()) {
+		cache_file_path_ = get_cache_file_path();
+		if (!cache_file_path_.empty()) {
+			QFileInfo cfi(QString::fromStdString(cache_file_path_));
+			cfi.dir().mkpath(".");
+
+			auto file = std::make_unique<QFile>(QString::fromStdString(cache_file_path_));
+			if (file->open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
+				cache_file_ = std::move(file);
+				cache_stream_ = std::make_unique<QTextStream>(cache_file_.get());
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+				cache_stream_->setCodec("UTF-8");
+#endif
+				QJsonObject header;
+				header["op"] = "header";
+				header["session_id"] = QString::fromStdString(session_id_);
+				header["video_path"] = QString::fromStdString(video_path_);
+				header["started_at"] = QString::fromStdString(started_at_);
+				header["fps_num"] = static_cast<qint64>(fps_.num);
+				header["fps_den"] = static_cast<qint64>(fps_.den);
+				header["width"] = static_cast<qint64>(width_);
+				header["height"] = static_cast<qint64>(height_);
+
+				QJsonDocument doc(header);
+				*cache_stream_ << QString::fromUtf8(doc.toJson(QJsonDocument::Compact)) << "\n";
+
+				for (const auto &m : markers_) {
+					QJsonObject op;
+					op["op"] = "add";
+					op["marker"] = m.to_json();
+					QJsonDocument mdoc(op);
+					*cache_stream_ << QString::fromUtf8(mdoc.toJson(QJsonDocument::Compact))
+						       << "\n";
+				}
+				cache_stream_->flush();
+			}
+		}
+	}
 }
 
 std::string RecordingSession::session_id() const

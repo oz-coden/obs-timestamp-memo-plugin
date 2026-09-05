@@ -36,6 +36,7 @@ public:
 
 	bool is_active() const;
 	std::string video_path() const;
+	void set_video_path(const std::string &path);
 	std::string session_id() const;
 	std::string started_at() const;
 	VideoFrameRate frame_rate() const;
@@ -48,7 +49,7 @@ public:
 private:
 	std::string get_cache_file_path() const;
 	void flush_journal_entry(const QJsonObject &entry);
-	void cleanup_cache_file();
+	void cleanup_cache_file(bool force = false);
 
 	mutable std::recursive_mutex mutex_;
 	bool active_ = false;

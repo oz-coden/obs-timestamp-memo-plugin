@@ -30,6 +30,7 @@ bool obs_module_load(void)
 void obs_module_unload(void)
 {
 	obs_log(LOG_INFO, "[%s] unloading...", PLUGIN_NAME);
+	obs_frontend_remove_dock("obs_timestamp_memo_dock");
 	ObsBridge::instance().shutdown();
 	g_dock_widget = nullptr;
 	obs_log(LOG_INFO, "[%s] unloaded", PLUGIN_NAME);

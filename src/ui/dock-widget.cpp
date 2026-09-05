@@ -385,7 +385,8 @@ void DockWidget::onContextMenuRequested(const QPoint &pos)
 	for (int i = 0; i < 4 && i < static_cast<int>(cfg.marker_types.size()); ++i) {
 		QString label = QString::fromStdString(cfg.marker_types[i].label);
 		QAction *act_type = menu_type->addAction(QString("%1: %2").arg(i + 1).arg(label));
-		connect(act_type, &QAction::triggered, this, [this, marker, i, &cfg]() {
+		connect(act_type, &QAction::triggered, this, [this, marker, i]() {
+			const auto &cfg = PluginConfig::instance();
 			auto &session = ObsBridge::instance().session();
 			session.update_marker(marker.id, cfg.marker_types[i].label, cfg.marker_types[i].color,
 					      marker.comment);

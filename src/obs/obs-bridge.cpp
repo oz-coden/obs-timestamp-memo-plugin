@@ -125,16 +125,21 @@ std::string ObsBridge::get_current_record_file_path() const
 	std::string file_path = "";
 	obs_output_t *output = obs_frontend_get_recording_output();
 	if (output) {
-		obs_data_t *settings = obs_output_get_settings(output);
-		if (settings) {
-			const char *path = obs_data_get_string(settings, "path");
-			if (!path || !*path) {
-				path = obs_data_get_string(settings, "url");
+		const char *target = obs_output_get_last_target(output);
+		if (target && *target) {
+			file_path = target;
+		} else {
+			obs_data_t *settings = obs_output_get_settings(output);
+			if (settings) {
+				const char *path = obs_data_get_string(settings, "path");
+				if (!path || !*path) {
+					path = obs_data_get_string(settings, "url");
+				}
+				if (path && *path) {
+					file_path = path;
+				}
+				obs_data_release(settings);
 			}
-			if (path && *path) {
-				file_path = path;
-			}
-			obs_data_release(settings);
 		}
 		obs_output_release(output);
 	}
@@ -253,7 +258,14 @@ void ObsBridge::check_recording_file_changed()
 		return;
 
 	std::string current_path = get_current_record_file_path();
-	if (!current_path.empty() && !session_.video_path().empty() && current_path != session_.video_path()) {
+	if (current_path.empty())
+		return;
+
+	if (session_.video_path().empty()) {
+		obs_log(LOG_INFO, "[Timestamp Memo] Late video path resolution: '%s'", current_path.c_str());
+		session_.set_video_path(current_path);
+		emit recordingFileChanged(QString::fromStdString(current_path));
+	} else if (current_path != session_.video_path()) {
 		obs_log(LOG_INFO, "[Timestamp Memo] File change detected: '%s' -> '%s'", session_.video_path().c_str(),
 			current_path.c_str());
 		handle_recording_file_changed();
@@ -292,6 +304,9 @@ void ObsBridge::handle_recording_stopped()
 	std::string video_path = session_.video_path();
 	if (video_path.empty()) {
 		video_path = get_current_record_file_path();
+		if (!video_path.empty()) {
+			session_.set_video_path(video_path);
+		}
 	}
 
 	std::string json_path;
