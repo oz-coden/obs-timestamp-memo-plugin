@@ -14,4 +14,7 @@ public:
 		return get_format_name() + " (*." + get_file_extension() + ")";
 	}
 	virtual bool export_to_file(const RecordingSession &session, const std::string &output_path) = 0;
+
+	virtual bool can_export_to_string() const { return false; }
+	virtual std::string export_to_string(const RecordingSession &) { return ""; }
 };

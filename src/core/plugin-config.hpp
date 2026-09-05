@@ -10,6 +10,9 @@ struct AutoExportConfig {
 	bool csv = false;
 	bool edl = false;
 	bool srt = false;
+	bool vtt = false;
+	bool youtube = false;
+	bool markdown = false;
 	bool xml = false;
 };
 

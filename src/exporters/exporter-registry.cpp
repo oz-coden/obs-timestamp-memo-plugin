@@ -2,8 +2,11 @@
 #include "csv-exporter.hpp"
 #include "edl-exporter.hpp"
 #include "json-exporter.hpp"
+#include "markdown-exporter.hpp"
 #include "srt-exporter.hpp"
+#include "vtt-exporter.hpp"
 #include "xml-exporter.hpp"
+#include "youtube-exporter.hpp"
 
 ExporterRegistry &ExporterRegistry::instance()
 {
@@ -22,6 +25,9 @@ void ExporterRegistry::register_defaults()
 	register_exporter(std::make_shared<CsvExporter>());
 	register_exporter(std::make_shared<EdlExporter>());
 	register_exporter(std::make_shared<SrtExporter>());
+	register_exporter(std::make_shared<VttExporter>());
+	register_exporter(std::make_shared<YoutubeExporter>());
+	register_exporter(std::make_shared<MarkdownExporter>());
 	register_exporter(std::make_shared<XmlExporter>());
 }
 

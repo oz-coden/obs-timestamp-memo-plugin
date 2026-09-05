@@ -2,12 +2,15 @@
 #include "exporter-registry.hpp"
 
 #include <QButtonGroup>
+#include <QClipboard>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QGroupBox>
+#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QRadioButton>
 #include <QVBoxLayout>
 
@@ -40,9 +43,20 @@ void ExportDialog::setup_ui()
 		vbox->addWidget(rb);
 	}
 
+#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
+	connect(btn_group_, &QButtonGroup::idClicked, this, &ExportDialog::onSelectionChanged);
+#else
+	connect(btn_group_, QOverload<int>::of(&QButtonGroup::buttonClicked), this, &ExportDialog::onSelectionChanged);
+#endif
+
 	main_layout->addWidget(grp);
 
 	auto *btn_layout = new QHBoxLayout();
+
+	btn_copy_ = new QPushButton("Copy to Clipboard", this);
+	connect(btn_copy_, &QPushButton::clicked, this, &ExportDialog::onCopyClicked);
+	btn_layout->addWidget(btn_copy_);
+
 	btn_layout->addStretch();
 
 	auto *btn_cancel = new QPushButton("Cancel", this);
@@ -55,6 +69,39 @@ void ExportDialog::setup_ui()
 	btn_layout->addWidget(btn_cancel);
 	btn_layout->addWidget(btn_export);
 	main_layout->addLayout(btn_layout);
+
+	// Update copy button initial state
+	if (!exporters_.empty()) {
+		onSelectionChanged(btn_group_->checkedId());
+	}
+}
+
+void ExportDialog::onSelectionChanged(int id)
+{
+	if (id >= 0 && id < static_cast<int>(exporters_.size())) {
+		btn_copy_->setEnabled(exporters_[id]->can_export_to_string());
+	} else {
+		btn_copy_->setEnabled(false);
+	}
+}
+
+void ExportDialog::onCopyClicked()
+{
+	int selected_id = btn_group_->checkedId();
+	if (selected_id < 0 || selected_id >= static_cast<int>(exporters_.size())) {
+		return;
+	}
+
+	const auto &exporter = exporters_[selected_id];
+	if (!exporter->can_export_to_string()) {
+		return;
+	}
+
+	std::string text = exporter->export_to_string(session_);
+	QGuiApplication::clipboard()->setText(QString::fromStdString(text));
+	QMessageBox::information(this, "Copied",
+				 QString("Successfully copied %1 to clipboard!")
+					 .arg(QString::fromStdString(exporter->get_format_name())));
 }
 
 void ExportDialog::onExportClicked()

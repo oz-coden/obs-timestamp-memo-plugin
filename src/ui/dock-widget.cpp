@@ -1,10 +1,12 @@
 #include "dock-widget.hpp"
 #include "export-dialog.hpp"
+#include "obs-bridge.hpp"
 #include "plugin-config.hpp"
 #include "session-controller.hpp"
 #include "settings-dialog.hpp"
 #include "status-notifier.hpp"
 #include "timecode-helper.hpp"
+#include "youtube-exporter.hpp"
 
 #include <QAction>
 #include <QClipboard>
@@ -363,6 +365,8 @@ void DockWidget::onContextMenuRequested(const QPoint &pos)
 	QAction *act_copy_tc = menu.addAction("Copy Timecode");
 	QAction *act_copy_memo = menu.addAction("Copy Memo Text");
 	menu.addSeparator();
+	QAction *act_copy_yt = menu.addAction("Copy YouTube Chapters (All)");
+	menu.addSeparator();
 
 	QMenu *menu_type = menu.addMenu("Change Type");
 	const auto &cfg = PluginConfig::instance();
@@ -386,6 +390,10 @@ void DockWidget::onContextMenuRequested(const QPoint &pos)
 		QGuiApplication::clipboard()->setText(QString::fromStdString(tc));
 	} else if (selected == act_copy_memo) {
 		QGuiApplication::clipboard()->setText(QString::fromStdString(marker.comment));
+	} else if (selected == act_copy_yt) {
+		std::string yt = YoutubeExporter::generate_chapters(controller.session());
+		QGuiApplication::clipboard()->setText(QString::fromStdString(yt));
+		StatusNotifier::instance().notify("Copied YouTube chapters to clipboard", 2500);
 	} else if (selected == act_del) {
 		controller.delete_marker(marker.id);
 	}

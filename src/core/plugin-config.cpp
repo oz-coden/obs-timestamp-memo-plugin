@@ -28,6 +28,9 @@ void PluginConfig::set_defaults()
 	auto_export.csv = false;
 	auto_export.edl = false;
 	auto_export.srt = false;
+	auto_export.vtt = false;
+	auto_export.youtube = false;
+	auto_export.markdown = false;
 	auto_export.xml = false;
 
 	show_status_bar_notification = true;
@@ -55,6 +58,9 @@ void PluginConfig::load()
 	auto_export.csv = settings.value("csv", false).toBool();
 	auto_export.edl = settings.value("edl", false).toBool();
 	auto_export.srt = settings.value("srt", false).toBool();
+	auto_export.vtt = settings.value("vtt", false).toBool();
+	auto_export.youtube = settings.value("youtube", false).toBool();
+	auto_export.markdown = settings.value("markdown", false).toBool();
 	auto_export.xml = settings.value("xml", false).toBool();
 	settings.endGroup();
 
@@ -81,6 +87,9 @@ void PluginConfig::save()
 	settings.setValue("csv", auto_export.csv);
 	settings.setValue("edl", auto_export.edl);
 	settings.setValue("srt", auto_export.srt);
+	settings.setValue("vtt", auto_export.vtt);
+	settings.setValue("youtube", auto_export.youtube);
+	settings.setValue("markdown", auto_export.markdown);
 	settings.setValue("xml", auto_export.xml);
 	settings.endGroup();
 

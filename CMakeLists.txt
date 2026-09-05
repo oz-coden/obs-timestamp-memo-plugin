@@ -81,6 +81,12 @@ target_sources(
           src/exporters/edl-exporter.cpp
           src/exporters/srt-exporter.hpp
           src/exporters/srt-exporter.cpp
+          src/exporters/vtt-exporter.hpp
+          src/exporters/vtt-exporter.cpp
+          src/exporters/youtube-exporter.hpp
+          src/exporters/youtube-exporter.cpp
+          src/exporters/markdown-exporter.hpp
+          src/exporters/markdown-exporter.cpp
           src/exporters/xml-exporter.hpp
           src/exporters/xml-exporter.cpp
           src/obs/obs-bridge.hpp

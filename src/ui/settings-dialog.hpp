@@ -36,6 +36,9 @@ private:
 	QCheckBox *chk_auto_csv_ = nullptr;
 	QCheckBox *chk_auto_edl_ = nullptr;
 	QCheckBox *chk_auto_srt_ = nullptr;
+	QCheckBox *chk_auto_vtt_ = nullptr;
+	QCheckBox *chk_auto_youtube_ = nullptr;
+	QCheckBox *chk_auto_markdown_ = nullptr;
 	QCheckBox *chk_auto_xml_ = nullptr;
 
 	QCheckBox *chk_status_bar_ = nullptr;

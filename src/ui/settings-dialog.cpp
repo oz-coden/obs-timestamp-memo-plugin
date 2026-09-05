@@ -57,12 +57,18 @@ void SettingsDialog::setup_ui()
 	chk_auto_csv_ = new QCheckBox("Export CSV (*.csv) - DaVinci / Premiere", this);
 	chk_auto_edl_ = new QCheckBox("Export CMX 3600 EDL (*.edl) - Timecode Markers", this);
 	chk_auto_srt_ = new QCheckBox("Export SubRip Subtitle (*.srt) - Subtitles", this);
+	chk_auto_vtt_ = new QCheckBox("Export WebVTT Subtitle (*.vtt) - HTML5 Video", this);
+	chk_auto_youtube_ = new QCheckBox("Export YouTube Chapters (*.chapters.txt)", this);
+	chk_auto_markdown_ = new QCheckBox("Export Markdown Document (*.md)", this);
 	chk_auto_xml_ = new QCheckBox("Export Premiere Pro XML (*.xml) - Sequence Markers", this);
 
 	auto_layout->addWidget(chk_auto_json_);
 	auto_layout->addWidget(chk_auto_csv_);
 	auto_layout->addWidget(chk_auto_edl_);
 	auto_layout->addWidget(chk_auto_srt_);
+	auto_layout->addWidget(chk_auto_vtt_);
+	auto_layout->addWidget(chk_auto_youtube_);
+	auto_layout->addWidget(chk_auto_markdown_);
 	auto_layout->addWidget(chk_auto_xml_);
 	main_layout->addWidget(grp_auto);
 
@@ -109,6 +115,9 @@ void SettingsDialog::load_values()
 	chk_auto_csv_->setChecked(cfg.auto_export.csv);
 	chk_auto_edl_->setChecked(cfg.auto_export.edl);
 	chk_auto_srt_->setChecked(cfg.auto_export.srt);
+	chk_auto_vtt_->setChecked(cfg.auto_export.vtt);
+	chk_auto_youtube_->setChecked(cfg.auto_export.youtube);
+	chk_auto_markdown_->setChecked(cfg.auto_export.markdown);
 	chk_auto_xml_->setChecked(cfg.auto_export.xml);
 
 	chk_status_bar_->setChecked(cfg.show_status_bar_notification);
@@ -137,6 +146,9 @@ void SettingsDialog::onResetDefaultsClicked()
 	chk_auto_csv_->setChecked(false);
 	chk_auto_edl_->setChecked(false);
 	chk_auto_srt_->setChecked(false);
+	chk_auto_vtt_->setChecked(false);
+	chk_auto_youtube_->setChecked(false);
+	chk_auto_markdown_->setChecked(false);
 	chk_auto_xml_->setChecked(false);
 
 	chk_status_bar_->setChecked(true);
@@ -175,6 +187,9 @@ void SettingsDialog::onSaveClicked()
 	cfg.auto_export.csv = chk_auto_csv_->isChecked();
 	cfg.auto_export.edl = chk_auto_edl_->isChecked();
 	cfg.auto_export.srt = chk_auto_srt_->isChecked();
+	cfg.auto_export.vtt = chk_auto_vtt_->isChecked();
+	cfg.auto_export.youtube = chk_auto_youtube_->isChecked();
+	cfg.auto_export.markdown = chk_auto_markdown_->isChecked();
 	cfg.auto_export.xml = chk_auto_xml_->isChecked();
 
 	cfg.show_status_bar_notification = chk_status_bar_->isChecked();

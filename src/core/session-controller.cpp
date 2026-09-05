@@ -264,6 +264,9 @@ void SessionController::perform_auto_export(const std::string &base_video_path)
 	try_export(auto_cfg.csv, "csv", "csv");
 	try_export(auto_cfg.edl, "edl", "edl");
 	try_export(auto_cfg.srt, "srt", "srt");
+	try_export(auto_cfg.vtt, "vtt", "vtt");
+	try_export(auto_cfg.youtube, "youtube", "chapters.txt");
+	try_export(auto_cfg.markdown, "markdown", "md");
 	try_export(auto_cfg.xml, "xml", "xml");
 
 	if (!all_success) {
