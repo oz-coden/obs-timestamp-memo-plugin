@@ -125,21 +125,19 @@ std::string ObsBridge::get_current_record_file_path() const
 	std::string file_path = "";
 	obs_output_t *output = obs_frontend_get_recording_output();
 	if (output) {
-		const char *target = obs_output_get_last_target(output);
-		if (target && *target) {
-			file_path = target;
-		} else {
-			obs_data_t *settings = obs_output_get_settings(output);
-			if (settings) {
-				const char *path = obs_data_get_string(settings, "path");
-				if (!path || !*path) {
-					path = obs_data_get_string(settings, "url");
-				}
-				if (path && *path) {
-					file_path = path;
-				}
-				obs_data_release(settings);
+		obs_data_t *settings = obs_output_get_settings(output);
+		if (settings) {
+			const char *path = obs_data_get_string(settings, "path");
+			if (!path || !*path) {
+				path = obs_data_get_string(settings, "url");
 			}
+			if (!path || !*path) {
+				path = obs_data_get_string(settings, "file");
+			}
+			if (path && *path) {
+				file_path = path;
+			}
+			obs_data_release(settings);
 		}
 		obs_output_release(output);
 	}
