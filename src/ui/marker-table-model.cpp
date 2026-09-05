@@ -153,14 +153,38 @@ void MarkerTableModel::add_marker(const MemoMarker &marker, const VideoFrameRate
 	endInsertRows();
 }
 
-void MarkerTableModel::update_marker(const MemoMarker &marker)
+void MarkerTableModel::update_marker(const MemoMarker &marker, int row)
 {
+	if (row >= 0 && row < static_cast<int>(markers_.size()) && markers_[row].id == marker.id) {
+		markers_[row] = marker;
+		emit dataChanged(index(row, 0), index(row, Col_Count - 1));
+		return;
+	}
+
 	for (size_t i = 0; i < markers_.size(); ++i) {
 		if (markers_[i].id == marker.id) {
 			markers_[i] = marker;
-			QModelIndex left = index(static_cast<int>(i), 0);
-			QModelIndex right = index(static_cast<int>(i), Col_Count - 1);
-			emit dataChanged(left, right);
+			emit dataChanged(index(static_cast<int>(i), 0), index(static_cast<int>(i), Col_Count - 1));
+			break;
+		}
+	}
+}
+
+void MarkerTableModel::remove_marker(uint32_t id, int row)
+{
+	if (row >= 0 && row < static_cast<int>(markers_.size()) && markers_[row].id == id) {
+		beginRemoveRows(QModelIndex(), row, row);
+		markers_.erase(markers_.begin() + row);
+		endRemoveRows();
+		return;
+	}
+
+	for (size_t i = 0; i < markers_.size(); ++i) {
+		if (markers_[i].id == id) {
+			int r = static_cast<int>(i);
+			beginRemoveRows(QModelIndex(), r, r);
+			markers_.erase(markers_.begin() + i);
+			endRemoveRows();
 			break;
 		}
 	}

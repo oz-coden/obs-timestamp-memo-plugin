@@ -30,7 +30,7 @@ public:
 	bool is_paused = false;
 
 	static MemoMarker create(uint32_t id, uint64_t ms, const VideoFrameRate &fps, int type_index,
-				 const std::string &label, const std::string &color, const std::string &comment,
+				 std::string_view label, std::string_view color, std::string_view comment,
 				 bool is_paused);
 
 	QJsonObject to_json() const;

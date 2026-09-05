@@ -13,8 +13,7 @@ std::string get_current_iso_time()
 } // namespace
 
 MemoMarker MemoMarker::create(uint32_t id, uint64_t ms, const VideoFrameRate &fps, int type_index,
-			      const std::string &label, const std::string &color, const std::string &comment,
-			      bool is_paused)
+			      std::string_view label, std::string_view color, std::string_view comment, bool is_paused)
 {
 	MemoMarker m;
 	m.id = id;

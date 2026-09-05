@@ -68,7 +68,11 @@ target_sources(
           src/core/plugin-config.cpp
           src/core/recording-session.hpp
           src/core/recording-session.cpp
+          src/core/session-controller.hpp
+          src/core/session-controller.cpp
           src/exporters/exporter-base.hpp
+          src/exporters/exporter-registry.hpp
+          src/exporters/exporter-registry.cpp
           src/exporters/json-exporter.hpp
           src/exporters/json-exporter.cpp
           src/exporters/csv-exporter.hpp

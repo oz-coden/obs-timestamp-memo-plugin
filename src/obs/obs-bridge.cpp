@@ -1,17 +1,5 @@
 #include "obs-bridge.hpp"
-#include "plugin-config.hpp"
-#include "status-notifier.hpp"
-#include "csv-exporter.hpp"
-#include "edl-exporter.hpp"
-#include "json-exporter.hpp"
-#include "srt-exporter.hpp"
-#include "xml-exporter.hpp"
-
 #include <plugin-support.h>
-#include <QDir>
-#include <QFileInfo>
-#include <obs-frontend-api.h>
-#include <obs.h>
 
 ObsBridge &ObsBridge::instance()
 {
@@ -51,11 +39,6 @@ void ObsBridge::initialize()
 
 	initialized_ = true;
 	obs_log(LOG_INFO, "[Timestamp Memo] ObsBridge initialized");
-
-	if (obs_frontend_recording_active()) {
-		obs_log(LOG_INFO, "[Timestamp Memo] Active recording detected on init, attaching session...");
-		handle_recording_started();
-	}
 }
 
 void ObsBridge::shutdown()
@@ -165,189 +148,6 @@ void ObsBridge::get_video_dimension(uint32_t &width, uint32_t &height) const
 	}
 }
 
-bool ObsBridge::trigger_marker(int type_index, const std::string &custom_comment)
-{
-	if (!is_recording()) {
-		StatusNotifier::instance().notify("Not recording! Cannot stamp marker.", 2000);
-		return false;
-	}
-
-	check_recording_file_changed();
-
-	if (type_index < 0 || type_index >= 4) {
-		type_index = 0;
-	}
-
-	const auto &cfg = PluginConfig::instance();
-	std::string label = cfg.marker_types[type_index].label;
-	std::string color = cfg.marker_types[type_index].color;
-	bool paused = is_paused();
-	uint64_t ms = get_current_record_ms();
-
-	MemoMarker m = session_.add_marker(ms, type_index, label, color, custom_comment, paused);
-
-	std::string tc = m.active_timecode(session_.frame_rate());
-	std::string msg = "[" + label + "] " + tc + (paused ? " (Paused)" : "") + " Recorded";
-	StatusNotifier::instance().notify(msg, 3000);
-
-	emit markerAdded(m);
-	return true;
-}
-
-bool ObsBridge::add_memo_marker(const std::string &text, int type_index)
-{
-	return trigger_marker(type_index, text);
-}
-
-void ObsBridge::perform_auto_export(const std::string &base_video_path)
-{
-	if (base_video_path.empty()) {
-		return;
-	}
-
-	QFileInfo fi(QString::fromStdString(base_video_path));
-	QDir dir = fi.dir();
-	QString base_name = fi.completeBaseName();
-
-	const auto &auto_cfg = PluginConfig::instance().auto_export;
-	bool all_success = true;
-
-	if (auto_cfg.csv) {
-		CsvExporter exp;
-		std::string path = dir.filePath(base_name + ".csv").toStdString();
-		if (!exp.export_to_file(session_, path)) {
-			obs_log(LOG_ERROR, "[Timestamp Memo] Failed to auto-export CSV to: %s", path.c_str());
-			all_success = false;
-		}
-	}
-	if (auto_cfg.edl) {
-		EdlExporter exp;
-		std::string path = dir.filePath(base_name + ".edl").toStdString();
-		if (!exp.export_to_file(session_, path)) {
-			obs_log(LOG_ERROR, "[Timestamp Memo] Failed to auto-export EDL to: %s", path.c_str());
-			all_success = false;
-		}
-	}
-	if (auto_cfg.srt) {
-		SrtExporter exp;
-		std::string path = dir.filePath(base_name + ".srt").toStdString();
-		if (!exp.export_to_file(session_, path)) {
-			obs_log(LOG_ERROR, "[Timestamp Memo] Failed to auto-export SRT to: %s", path.c_str());
-			all_success = false;
-		}
-	}
-	if (auto_cfg.xml) {
-		XmlExporter exp;
-		std::string path = dir.filePath(base_name + ".xml").toStdString();
-		if (!exp.export_to_file(session_, path)) {
-			obs_log(LOG_ERROR, "[Timestamp Memo] Failed to auto-export XML to: %s", path.c_str());
-			all_success = false;
-		}
-	}
-
-	if (!all_success) {
-		StatusNotifier::instance().notify("Warning: Some auto-export formats failed to save!", 5000);
-	}
-}
-
-void ObsBridge::check_recording_file_changed()
-{
-	if (!is_recording())
-		return;
-
-	std::string current_path = get_current_record_file_path();
-	if (current_path.empty())
-		return;
-
-	if (session_.video_path().empty()) {
-		obs_log(LOG_INFO, "[Timestamp Memo] Late video path resolution: '%s'", current_path.c_str());
-		session_.set_video_path(current_path);
-		emit recordingFileChanged(QString::fromStdString(current_path));
-	} else if (current_path != session_.video_path()) {
-		obs_log(LOG_INFO, "[Timestamp Memo] File change detected: '%s' -> '%s'", session_.video_path().c_str(),
-			current_path.c_str());
-		handle_recording_file_changed();
-	}
-}
-
-void ObsBridge::handle_recording_started()
-{
-	std::string path = get_current_record_file_path();
-
-	VideoFrameRate fps = get_current_frame_rate();
-	uint32_t width = 1920, height = 1080;
-	get_video_dimension(width, height);
-
-	session_.start_session(path, fps, width, height);
-
-	emit markersCleared();
-	emit recordingStarted(QString::fromStdString(path));
-	StatusNotifier::instance().notify("Recording started", 2000);
-}
-
-void ObsBridge::handle_recording_paused()
-{
-	emit recordingPaused();
-	StatusNotifier::instance().notify("Recording paused", 2000);
-}
-
-void ObsBridge::handle_recording_unpaused()
-{
-	emit recordingUnpaused();
-	StatusNotifier::instance().notify("Recording resumed", 2000);
-}
-
-void ObsBridge::handle_recording_stopped()
-{
-	std::string video_path = session_.video_path();
-	if (video_path.empty()) {
-		video_path = get_current_record_file_path();
-		if (!video_path.empty()) {
-			session_.set_video_path(video_path);
-		}
-	}
-
-	std::string json_path;
-	bool save_ok = session_.stop_session(&json_path);
-
-	perform_auto_export(video_path);
-
-	emit recordingStopped(QString::fromStdString(json_path));
-
-	if (save_ok) {
-		StatusNotifier::instance().notify("Recording stopped. Markers saved.", 3000);
-	} else {
-		StatusNotifier::instance().notify("Recording stopped. Warning: Failed to save JSON! Cache preserved.",
-						  5000);
-	}
-}
-
-void ObsBridge::handle_recording_file_changed()
-{
-	std::string old_video_path = session_.video_path();
-	std::string old_json_path;
-	bool save_ok = session_.stop_session(&old_json_path);
-	if (!save_ok) {
-		obs_log(LOG_ERROR, "[Timestamp Memo] Failed to save previous segment JSON on file split: %s",
-			old_json_path.c_str());
-		StatusNotifier::instance().notify("Warning: Failed to save previous segment JSON! Cache preserved.",
-						  5000);
-	}
-	perform_auto_export(old_video_path);
-
-	std::string new_path = get_current_record_file_path();
-
-	VideoFrameRate fps = get_current_frame_rate();
-	uint32_t width = 1920, height = 1080;
-	get_video_dimension(width, height);
-
-	session_.start_session(new_path, fps, width, height);
-
-	emit markersCleared();
-	emit recordingFileChanged(QString::fromStdString(new_path));
-	StatusNotifier::instance().notify("Recording split into: " + new_path, 3000);
-}
-
 void ObsBridge::on_frontend_event(enum obs_frontend_event event, void *private_data)
 {
 	auto *self = static_cast<ObsBridge *>(private_data);
@@ -356,16 +156,16 @@ void ObsBridge::on_frontend_event(enum obs_frontend_event event, void *private_d
 
 	switch (event) {
 	case OBS_FRONTEND_EVENT_RECORDING_STARTED:
-		self->handle_recording_started();
+		emit self->obsRecordingStarted();
 		break;
 	case OBS_FRONTEND_EVENT_RECORDING_PAUSED:
-		self->handle_recording_paused();
+		emit self->obsRecordingPaused();
 		break;
 	case OBS_FRONTEND_EVENT_RECORDING_UNPAUSED:
-		self->handle_recording_unpaused();
+		emit self->obsRecordingUnpaused();
 		break;
 	case OBS_FRONTEND_EVENT_RECORDING_STOPPED:
-		self->handle_recording_stopped();
+		emit self->obsRecordingStopped();
 		break;
 	default:
 		break;
@@ -423,7 +223,7 @@ void ObsBridge::on_hotkey_marker_1(void *data, obs_hotkey_id, obs_hotkey_t *, bo
 		return;
 	auto *self = static_cast<ObsBridge *>(data);
 	if (self) {
-		self->trigger_marker(0);
+		emit self->obsTriggerMarker1();
 	}
 }
 
@@ -433,7 +233,7 @@ void ObsBridge::on_hotkey_marker_2(void *data, obs_hotkey_id, obs_hotkey_t *, bo
 		return;
 	auto *self = static_cast<ObsBridge *>(data);
 	if (self) {
-		self->trigger_marker(1);
+		emit self->obsTriggerMarker2();
 	}
 }
 
@@ -443,7 +243,7 @@ void ObsBridge::on_hotkey_marker_3(void *data, obs_hotkey_id, obs_hotkey_t *, bo
 		return;
 	auto *self = static_cast<ObsBridge *>(data);
 	if (self) {
-		self->trigger_marker(2);
+		emit self->obsTriggerMarker3();
 	}
 }
 
@@ -453,7 +253,7 @@ void ObsBridge::on_hotkey_marker_4(void *data, obs_hotkey_id, obs_hotkey_t *, bo
 		return;
 	auto *self = static_cast<ObsBridge *>(data);
 	if (self) {
-		self->trigger_marker(3);
+		emit self->obsTriggerMarker4();
 	}
 }
 
@@ -463,6 +263,6 @@ void ObsBridge::on_hotkey_focus_memo(void *data, obs_hotkey_id, obs_hotkey_t *, 
 		return;
 	auto *self = static_cast<ObsBridge *>(data);
 	if (self) {
-		emit self->focusMemoInputRequested();
+		emit self->obsFocusMemoRequested();
 	}
 }

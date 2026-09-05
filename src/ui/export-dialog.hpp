@@ -1,8 +1,12 @@
 #pragma once
 
+#include "exporter-base.hpp"
 #include "recording-session.hpp"
+
+#include <memory>
+#include <vector>
+#include <QButtonGroup>
 #include <QDialog>
-#include <QRadioButton>
 #include <QPushButton>
 
 class ExportDialog : public QDialog {
@@ -18,9 +22,6 @@ private:
 	void setup_ui();
 
 	const RecordingSession &session_;
-	QRadioButton *rb_csv_ = nullptr;
-	QRadioButton *rb_edl_ = nullptr;
-	QRadioButton *rb_srt_ = nullptr;
-	QRadioButton *rb_xml_ = nullptr;
-	QRadioButton *rb_json_ = nullptr;
+	QButtonGroup *btn_group_ = nullptr;
+	std::vector<std::shared_ptr<IExporter>> exporters_;
 };

@@ -90,4 +90,5 @@ void PluginConfig::save()
 	settings.endGroup();
 
 	settings.sync();
+	emit configChanged();
 }

@@ -25,7 +25,8 @@ public:
 
 	void set_markers(const std::vector<MemoMarker> &markers, const VideoFrameRate &fps);
 	void add_marker(const MemoMarker &marker, const VideoFrameRate &fps);
-	void update_marker(const MemoMarker &marker);
+	void update_marker(const MemoMarker &marker, int row = -1);
+	void remove_marker(uint32_t id, int row = -1);
 	void clear();
 
 	const std::vector<MemoMarker> &get_markers() const { return markers_; }

@@ -1,9 +1,5 @@
 #include "export-dialog.hpp"
-#include "csv-exporter.hpp"
-#include "edl-exporter.hpp"
-#include "json-exporter.hpp"
-#include "srt-exporter.hpp"
-#include "xml-exporter.hpp"
+#include "exporter-registry.hpp"
 
 #include <QButtonGroup>
 #include <QFileDialog>
@@ -12,12 +8,15 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMessageBox>
+#include <QRadioButton>
 #include <QVBoxLayout>
 
 ExportDialog::ExportDialog(const RecordingSession &session, QWidget *parent) : QDialog(parent), session_(session)
 {
 	setWindowTitle("Export Markers");
 	setMinimumWidth(380);
+
+	exporters_ = ExporterRegistry::instance().get_all();
 	setup_ui();
 }
 
@@ -28,19 +27,19 @@ void ExportDialog::setup_ui()
 	auto *grp = new QGroupBox("Select Export Format", this);
 	auto *vbox = new QVBoxLayout(grp);
 
-	rb_csv_ = new QRadioButton("CSV (*.csv) - DaVinci Resolve / Premiere Pro", this);
-	rb_edl_ = new QRadioButton("CMX 3600 EDL (*.edl) - Timecode Markers", this);
-	rb_srt_ = new QRadioButton("SubRip Subtitle (*.srt) - Subtitles", this);
-	rb_xml_ = new QRadioButton("Premiere Pro XML (*.xml) - Sequence Markers", this);
-	rb_json_ = new QRadioButton("JSON (*.json) - Full Metadata & Markers", this);
+	btn_group_ = new QButtonGroup(this);
 
-	rb_csv_->setChecked(true);
+	for (size_t i = 0; i < exporters_.size(); ++i) {
+		const auto &exp = exporters_[i];
+		QString text = QString::fromStdString(exp->get_filter_string());
+		auto *rb = new QRadioButton(text, this);
+		if (i == 0) {
+			rb->setChecked(true);
+		}
+		btn_group_->addButton(rb, static_cast<int>(i));
+		vbox->addWidget(rb);
+	}
 
-	vbox->addWidget(rb_csv_);
-	vbox->addWidget(rb_edl_);
-	vbox->addWidget(rb_srt_);
-	vbox->addWidget(rb_xml_);
-	vbox->addWidget(rb_json_);
 	main_layout->addWidget(grp);
 
 	auto *btn_layout = new QHBoxLayout();
@@ -60,31 +59,14 @@ void ExportDialog::setup_ui()
 
 void ExportDialog::onExportClicked()
 {
-	std::unique_ptr<IExporter> exporter;
-	QString filter;
-	QString ext;
-
-	if (rb_csv_->isChecked()) {
-		exporter = std::make_unique<CsvExporter>();
-		filter = "CSV File (*.csv)";
-		ext = "csv";
-	} else if (rb_edl_->isChecked()) {
-		exporter = std::make_unique<EdlExporter>();
-		filter = "CMX 3600 EDL (*.edl)";
-		ext = "edl";
-	} else if (rb_srt_->isChecked()) {
-		exporter = std::make_unique<SrtExporter>();
-		filter = "SRT Subtitle (*.srt)";
-		ext = "srt";
-	} else if (rb_xml_->isChecked()) {
-		exporter = std::make_unique<XmlExporter>();
-		filter = "Premiere XML (*.xml)";
-		ext = "xml";
-	} else {
-		exporter = std::make_unique<JsonExporter>();
-		filter = "JSON File (*.json)";
-		ext = "json";
+	int selected_id = btn_group_->checkedId();
+	if (selected_id < 0 || selected_id >= static_cast<int>(exporters_.size())) {
+		return;
 	}
+
+	const auto &exporter = exporters_[selected_id];
+	QString ext = QString::fromStdString(exporter->get_file_extension());
+	QString filter = QString("%1 (*.%2)").arg(QString::fromStdString(exporter->get_format_name()), ext);
 
 	QString default_name = "markers." + ext;
 	if (!session_.video_path().empty()) {

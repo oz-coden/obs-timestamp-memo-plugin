@@ -1,7 +1,9 @@
 #include "timecode-helper.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <iomanip>
 #include <sstream>
 
@@ -105,14 +107,19 @@ std::string TimecodeHelper::ms_to_smpte(uint64_t ms, const VideoFrameRate &fps, 
 	return frame_index_to_smpte(frame_index, fps, force_ndf);
 }
 
-uint64_t TimecodeHelper::smpte_to_frame_index(const std::string &timecode, const VideoFrameRate &fps)
+uint64_t TimecodeHelper::smpte_to_frame_index(std::string_view timecode, const VideoFrameRate &fps)
 {
 	if (timecode.length() < 11)
 		return 0;
 
+	char buf[32];
+	size_t len = std::min(timecode.length(), sizeof(buf) - 1);
+	std::memcpy(buf, timecode.data(), len);
+	buf[len] = '\0';
+
 	unsigned int hh = 0, mm = 0, ss = 0, ff = 0;
 	char sep = ':';
-	if (std::sscanf(timecode.c_str(), "%u:%u:%u%c%u", &hh, &mm, &ss, &sep, &ff) < 4) {
+	if (std::sscanf(buf, "%u:%u:%u%c%u", &hh, &mm, &ss, &sep, &ff) < 4) {
 		return 0;
 	}
 

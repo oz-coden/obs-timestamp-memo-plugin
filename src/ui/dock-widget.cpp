@@ -1,7 +1,7 @@
 #include "dock-widget.hpp"
 #include "export-dialog.hpp"
-#include "obs-bridge.hpp"
 #include "plugin-config.hpp"
+#include "session-controller.hpp"
 #include "settings-dialog.hpp"
 #include "status-notifier.hpp"
 #include "timecode-helper.hpp"
@@ -14,7 +14,6 @@
 #include <QGuiApplication>
 #include <QHeaderView>
 #include <QHBoxLayout>
-#include <QInputDialog>
 #include <QMenu>
 #include <QMessageBox>
 #include <QVBoxLayout>
@@ -26,15 +25,23 @@ DockWidget::DockWidget(QWidget *parent) : QDockWidget(parent)
 
 	setup_ui();
 
-	auto &bridge = ObsBridge::instance();
-	connect(&bridge, &ObsBridge::markerAdded, this, &DockWidget::onMarkerAdded);
-	connect(&bridge, &ObsBridge::recordingStarted, this, &DockWidget::onRecordingStarted);
-	connect(&bridge, &ObsBridge::recordingPaused, this, &DockWidget::onRecordingPaused);
-	connect(&bridge, &ObsBridge::recordingUnpaused, this, &DockWidget::onRecordingUnpaused);
-	connect(&bridge, &ObsBridge::recordingStopped, this, &DockWidget::onRecordingStopped);
-	connect(&bridge, &ObsBridge::recordingFileChanged, this, &DockWidget::onRecordingFileChanged);
-	connect(&bridge, &ObsBridge::markersCleared, this, &DockWidget::clear_ui_markers);
-	connect(&bridge, &ObsBridge::focusMemoInputRequested, this, &DockWidget::onFocusMemoInputRequested);
+	auto &controller = SessionController::instance();
+	connect(&controller, &SessionController::markerAdded, this, &DockWidget::onMarkerAdded);
+	connect(&controller, &SessionController::markerUpdated, this, &DockWidget::onMarkerUpdated);
+	connect(&controller, &SessionController::markerRemoved, this, &DockWidget::onMarkerRemoved);
+	connect(&controller, &SessionController::markersReset, this, &DockWidget::onMarkersReset);
+
+	connect(&controller, &SessionController::sessionStarted, this, &DockWidget::onSessionStarted);
+	connect(&controller, &SessionController::sessionPaused, this, &DockWidget::onSessionPaused);
+	connect(&controller, &SessionController::sessionResumed, this, &DockWidget::onSessionResumed);
+	connect(&controller, &SessionController::sessionStopped, this, &DockWidget::onSessionStopped);
+	connect(&controller, &SessionController::videoPathResolved, this, &DockWidget::onVideoPathResolved);
+	connect(&controller, &SessionController::focusMemoInputRequested, this, &DockWidget::onFocusMemoInputRequested);
+
+	connect(&PluginConfig::instance(), &PluginConfig::configChanged, this, [this]() {
+		refreshMarkerButtons();
+		table_view_->viewport()->update();
+	});
 
 	connect(table_model_, &MarkerTableModel::markerDataChanged, this, &DockWidget::onMarkerDataChanged);
 
@@ -170,12 +177,7 @@ void DockWidget::keyPressEvent(QKeyEvent *event)
 			const auto &markers = table_model_->get_markers();
 			if (row >= 0 && row < static_cast<int>(markers.size())) {
 				uint32_t mid = markers[row].id;
-				auto &session = ObsBridge::instance().session();
-				session.delete_marker(mid);
-				table_model_->set_markers(session.get_markers(), session.frame_rate());
-				if (!session.is_active() && !session.video_path().empty()) {
-					session.save_to_json();
-				}
+				SessionController::instance().delete_marker(mid);
 				event->accept();
 				return;
 			}
@@ -201,20 +203,20 @@ void DockWidget::refreshMarkerButtons()
 
 void DockWidget::update_status_ui()
 {
-	auto &bridge = ObsBridge::instance();
-	bool rec = bridge.is_recording();
+	auto &controller = SessionController::instance();
+	bool rec = controller.is_recording();
 
 	btn_open_->setEnabled(!rec);
 
 	if (rec) {
-		if (bridge.is_paused()) {
+		if (controller.is_paused()) {
 			lbl_status_->setText("⏸ PAUSED");
 			lbl_status_->setStyleSheet("font-weight: bold; color: #f39c12;");
 		} else {
 			lbl_status_->setText("● REC");
 			lbl_status_->setStyleSheet("font-weight: bold; color: #e74c3c;");
 		}
-		std::string path = bridge.session().video_path();
+		std::string path = controller.current_video_path();
 		if (!path.empty()) {
 			QFileInfo fi(QString::fromStdString(path));
 			lbl_video_name_->setText(fi.fileName());
@@ -222,7 +224,7 @@ void DockWidget::update_status_ui()
 	} else {
 		lbl_status_->setText("■ STOPPED");
 		lbl_status_->setStyleSheet("font-weight: bold; color: #888888;");
-		if (bridge.session().video_path().empty()) {
+		if (controller.current_video_path().empty()) {
 			lbl_video_name_->setText("No active recording");
 		}
 	}
@@ -230,17 +232,17 @@ void DockWidget::update_status_ui()
 
 void DockWidget::updateLiveTimer()
 {
-	auto &bridge = ObsBridge::instance();
-	if (bridge.is_recording()) {
-		bridge.check_recording_file_changed();
-		uint64_t ms = bridge.get_current_record_ms();
+	auto &controller = SessionController::instance();
+	if (controller.is_recording()) {
+		controller.check_recording_file_changed();
+		uint64_t ms = controller.current_record_ms();
 		lbl_live_time_->setText(QString::fromStdString(TimecodeHelper::ms_to_timestamp_str(ms, true)));
 	}
 }
 
 void DockWidget::onQuickMarkerClicked(int index)
 {
-	ObsBridge::instance().trigger_marker(index);
+	SessionController::instance().trigger_quick_marker(index);
 }
 
 void DockWidget::onAddMemoClicked()
@@ -250,21 +252,22 @@ void DockWidget::onAddMemoClicked()
 		return;
 	}
 
-	if (ObsBridge::instance().add_memo_marker(text.toStdString(), 0)) {
+	if (SessionController::instance().add_memo_marker(text.toStdString(), 0)) {
 		edit_memo_->clear();
 	}
 }
 
 void DockWidget::onOpenJsonClicked()
 {
-	if (ObsBridge::instance().is_recording()) {
+	if (SessionController::instance().is_recording()) {
 		QMessageBox::warning(this, "Action Blocked", "Cannot open another file while recording is active.");
 		return;
 	}
 
 	QString initial_dir = "";
-	if (!ObsBridge::instance().session().video_path().empty()) {
-		QFileInfo fi(QString::fromStdString(ObsBridge::instance().session().video_path()));
+	std::string current_path = SessionController::instance().current_video_path();
+	if (!current_path.empty()) {
+		QFileInfo fi(QString::fromStdString(current_path));
 		initial_dir = fi.dir().absolutePath();
 	}
 
@@ -276,27 +279,28 @@ void DockWidget::onOpenJsonClicked()
 		return;
 	}
 
-	auto &session = ObsBridge::instance().session();
+	auto &controller = SessionController::instance();
 	bool loaded = false;
 
 	if (path.endsWith(".tmp.jsonl", Qt::CaseInsensitive)) {
-		loaded = RecordingSession::recover_from_cache(path.toStdString(), session);
+		loaded = controller.recover_from_cache(path.toStdString());
 		if (loaded) {
-			table_model_->set_markers(session.get_markers(), session.frame_rate());
 			QFileInfo fi(path);
 			lbl_video_name_->setText(fi.fileName() + " (Recovered)");
-			StatusNotifier::instance().notify("Recovered " + std::to_string(session.get_markers().size()) +
-								  " markers from cache",
-							  3000);
+			StatusNotifier::instance().notify(
+				"Recovered " + std::to_string(controller.session().get_markers().size()) +
+					" markers from cache",
+				3000);
 		}
 	} else {
-		loaded = session.load_from_json(path.toStdString());
+		loaded = controller.load_from_json(path.toStdString());
 		if (loaded) {
-			table_model_->set_markers(session.get_markers(), session.frame_rate());
 			QFileInfo fi(path);
 			lbl_video_name_->setText(fi.fileName() + " (Loaded)");
 			StatusNotifier::instance().notify(
-				"Loaded " + std::to_string(session.get_markers().size()) + " markers from JSON", 2000);
+				"Loaded " + std::to_string(controller.session().get_markers().size()) +
+					" markers from JSON",
+				2000);
 		}
 	}
 
@@ -307,7 +311,7 @@ void DockWidget::onOpenJsonClicked()
 
 void DockWidget::onExportClicked()
 {
-	auto &session = ObsBridge::instance().session();
+	const auto &session = SessionController::instance().session();
 	if (session.get_markers().empty()) {
 		QMessageBox::information(this, "Export", "There are no markers to export.");
 		return;
@@ -320,13 +324,7 @@ void DockWidget::onExportClicked()
 void DockWidget::onSettingsClicked()
 {
 	SettingsDialog dlg(this);
-	connect(&dlg, &SettingsDialog::settingsSaved, this, &DockWidget::refreshMarkerButtons);
 	dlg.exec();
-}
-
-void DockWidget::clear_ui_markers()
-{
-	table_model_->clear();
 }
 
 void DockWidget::onClearClicked()
@@ -337,27 +335,13 @@ void DockWidget::onClearClicked()
 	auto btn = QMessageBox::question(this, "Clear Markers", "Are you sure you want to clear all markers?",
 					 QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
 	if (btn == QMessageBox::Yes) {
-		auto &session = ObsBridge::instance().session();
-		session.clear_markers();
-		table_model_->clear();
-		if (!session.is_active() && !session.video_path().empty()) {
-			session.save_to_json();
-		}
+		SessionController::instance().clear_markers();
 	}
 }
 
 void DockWidget::onMarkerDataChanged(uint32_t marker_id, const QString &label, const QString &comment)
 {
-	auto &session = ObsBridge::instance().session();
-	for (auto &m : session.get_markers()) {
-		if (m.id == marker_id) {
-			session.update_marker(marker_id, label.toStdString(), m.color, comment.toStdString());
-			if (!session.is_active() && !session.video_path().empty()) {
-				session.save_to_json();
-			}
-			break;
-		}
-	}
+	SessionController::instance().update_marker_comment(marker_id, comment.toStdString());
 }
 
 void DockWidget::onContextMenuRequested(const QPoint &pos)
@@ -372,7 +356,7 @@ void DockWidget::onContextMenuRequested(const QPoint &pos)
 		return;
 
 	const auto &marker = markers[row];
-	auto &session = ObsBridge::instance().session();
+	auto &controller = SessionController::instance();
 
 	QMenu menu(this);
 
@@ -385,15 +369,8 @@ void DockWidget::onContextMenuRequested(const QPoint &pos)
 	for (int i = 0; i < 4 && i < static_cast<int>(cfg.marker_types.size()); ++i) {
 		QString label = QString::fromStdString(cfg.marker_types[i].label);
 		QAction *act_type = menu_type->addAction(QString("%1: %2").arg(i + 1).arg(label));
-		connect(act_type, &QAction::triggered, this, [this, marker, i]() {
-			const auto &cfg = PluginConfig::instance();
-			auto &session = ObsBridge::instance().session();
-			session.update_marker(marker.id, cfg.marker_types[i].label, cfg.marker_types[i].color,
-					      marker.comment);
-			table_model_->set_markers(session.get_markers(), session.frame_rate());
-			if (!session.is_active() && !session.video_path().empty()) {
-				session.save_to_json();
-			}
+		connect(act_type, &QAction::triggered, this, [marker_id = marker.id, i]() {
+			SessionController::instance().update_marker_type(marker_id, i);
 		});
 	}
 
@@ -405,50 +382,60 @@ void DockWidget::onContextMenuRequested(const QPoint &pos)
 		return;
 
 	if (selected == act_copy_tc) {
-		std::string tc = marker.active_timecode(session.frame_rate());
+		std::string tc = marker.active_timecode(controller.current_frame_rate());
 		QGuiApplication::clipboard()->setText(QString::fromStdString(tc));
 	} else if (selected == act_copy_memo) {
 		QGuiApplication::clipboard()->setText(QString::fromStdString(marker.comment));
 	} else if (selected == act_del) {
-		session.delete_marker(marker.id);
-		table_model_->set_markers(session.get_markers(), session.frame_rate());
-		if (!session.is_active() && !session.video_path().empty()) {
-			session.save_to_json();
-		}
+		controller.delete_marker(marker.id);
 	}
 }
 
-void DockWidget::onMarkerAdded(const MemoMarker &marker)
+void DockWidget::onMarkerAdded(const MemoMarker &marker, int)
 {
-	table_model_->add_marker(marker, ObsBridge::instance().session().frame_rate());
+	table_model_->add_marker(marker, SessionController::instance().current_frame_rate());
 	table_view_->scrollToBottom();
 }
 
-void DockWidget::onRecordingStarted(const QString &)
+void DockWidget::onMarkerUpdated(const MemoMarker &marker, int row)
 {
-	update_status_ui();
-	table_model_->clear();
+	table_model_->update_marker(marker, row);
 }
 
-void DockWidget::onRecordingPaused()
+void DockWidget::onMarkerRemoved(uint32_t id, int row)
+{
+	table_model_->remove_marker(id, row);
+}
+
+void DockWidget::onMarkersReset(const std::vector<MemoMarker> &markers, const VideoFrameRate &fps)
+{
+	table_model_->set_markers(markers, fps);
+}
+
+void DockWidget::onSessionStarted(const QString &)
 {
 	update_status_ui();
 }
 
-void DockWidget::onRecordingUnpaused()
+void DockWidget::onSessionPaused()
 {
 	update_status_ui();
 }
 
-void DockWidget::onRecordingStopped(const QString &)
+void DockWidget::onSessionResumed()
 {
 	update_status_ui();
 }
 
-void DockWidget::onRecordingFileChanged(const QString &)
+void DockWidget::onSessionStopped(const QString &)
 {
 	update_status_ui();
-	table_model_->clear();
+}
+
+void DockWidget::onVideoPathResolved(const QString &newVideoPath)
+{
+	QFileInfo fi(newVideoPath);
+	lbl_video_name_->setText(fi.fileName());
 }
 
 void DockWidget::onFocusMemoInputRequested()

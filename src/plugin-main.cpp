@@ -4,8 +4,8 @@
 
 #include <QMainWindow>
 
-#include "obs-bridge.hpp"
 #include "dock-widget.hpp"
+#include "session-controller.hpp"
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
@@ -16,7 +16,7 @@ bool obs_module_load(void)
 {
 	obs_log(LOG_INFO, "[%s] version %s loading...", PLUGIN_NAME, PLUGIN_VERSION);
 
-	ObsBridge::instance().initialize();
+	SessionController::instance().initialize();
 
 	auto *main_win = static_cast<QMainWindow *>(obs_frontend_get_main_window());
 	g_dock_widget = new DockWidget(main_win);
@@ -31,7 +31,7 @@ void obs_module_unload(void)
 {
 	obs_log(LOG_INFO, "[%s] unloading...", PLUGIN_NAME);
 	obs_frontend_remove_dock("obs_timestamp_memo_dock");
-	ObsBridge::instance().shutdown();
+	SessionController::instance().shutdown();
 	g_dock_widget = nullptr;
 	obs_log(LOG_INFO, "[%s] unloaded", PLUGIN_NAME);
 }

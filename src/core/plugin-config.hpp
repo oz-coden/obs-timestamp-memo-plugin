@@ -3,6 +3,7 @@
 #include "memo-marker.hpp"
 #include <string>
 #include <vector>
+#include <QObject>
 
 struct AutoExportConfig {
 	bool json = true;
@@ -12,7 +13,9 @@ struct AutoExportConfig {
 	bool xml = false;
 };
 
-class PluginConfig {
+class PluginConfig : public QObject {
+	Q_OBJECT
+
 public:
 	static PluginConfig &instance();
 
@@ -23,6 +26,9 @@ public:
 	AutoExportConfig auto_export;
 	bool show_status_bar_notification = true;
 	bool keep_tmp_cache_on_crash = true;
+
+signals:
+	void configChanged();
 
 private:
 	PluginConfig();

@@ -1,8 +1,8 @@
 #pragma once
 
 #include "marker-table-model.hpp"
-#include "recording-session.hpp"
 
+#include <vector>
 #include <QDockWidget>
 #include <QKeyEvent>
 #include <QLabel>
@@ -10,7 +10,6 @@
 #include <QPushButton>
 #include <QTableView>
 #include <QTimer>
-#include <vector>
 
 class DockWidget : public QDockWidget {
 	Q_OBJECT
@@ -21,7 +20,6 @@ public:
 
 public slots:
 	void refreshMarkerButtons();
-	void clear_ui_markers();
 
 protected:
 	void keyPressEvent(QKeyEvent *event) override;
@@ -37,12 +35,16 @@ private slots:
 	void onContextMenuRequested(const QPoint &pos);
 	void updateLiveTimer();
 
-	void onMarkerAdded(const MemoMarker &marker);
-	void onRecordingStarted(const QString &videoPath);
-	void onRecordingPaused();
-	void onRecordingUnpaused();
-	void onRecordingStopped(const QString &jsonPath);
-	void onRecordingFileChanged(const QString &newVideoPath);
+	void onMarkerAdded(const MemoMarker &marker, int row);
+	void onMarkerUpdated(const MemoMarker &marker, int row);
+	void onMarkerRemoved(uint32_t id, int row);
+	void onMarkersReset(const std::vector<MemoMarker> &markers, const VideoFrameRate &fps);
+
+	void onSessionStarted(const QString &videoPath);
+	void onSessionPaused();
+	void onSessionResumed();
+	void onSessionStopped(const QString &jsonPath);
+	void onVideoPathResolved(const QString &newVideoPath);
 	void onFocusMemoInputRequested();
 
 private:
