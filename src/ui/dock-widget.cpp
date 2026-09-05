@@ -341,7 +341,7 @@ void DockWidget::onClearClicked()
 
 void DockWidget::onMarkerDataChanged(uint32_t marker_id, const QString &label, const QString &comment)
 {
-	SessionController::instance().update_marker_comment(marker_id, comment.toStdString());
+	SessionController::instance().update_marker_data(marker_id, label.toStdString(), "", comment.toStdString());
 }
 
 void DockWidget::onContextMenuRequested(const QPoint &pos)

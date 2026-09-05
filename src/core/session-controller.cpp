@@ -166,9 +166,10 @@ bool SessionController::update_marker_data(uint32_t id, const std::string &label
 	auto markers = session_.get_markers();
 	for (size_t i = 0; i < markers.size(); ++i) {
 		if (markers[i].id == id) {
-			session_.update_marker(id, label, color, comment);
+			std::string final_color = color.empty() ? markers[i].color : color;
+			session_.update_marker(id, label, final_color, comment);
 			markers[i].label = label;
-			markers[i].color = color;
+			markers[i].color = final_color;
 			markers[i].comment = comment;
 			if (!session_.is_active() && !session_.video_path().empty()) {
 				session_.save_to_json();
