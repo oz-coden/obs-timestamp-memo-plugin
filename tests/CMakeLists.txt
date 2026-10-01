@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.28)
 project(timestamp_memo_regressions LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+add_compile_options($<$<CXX_COMPILER_ID:Clang,AppleClang>:-Werror=range-loop-bind-reference>)
 enable_testing()
 add_executable(domain_tests domain-tests.cpp ../src/core/timecode-helper.cpp
   ../src/core/memo-marker.cpp ../src/core/recording-session.cpp ../src/exporters/text-formats.cpp)

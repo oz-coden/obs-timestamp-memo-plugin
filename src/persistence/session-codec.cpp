@@ -91,7 +91,7 @@ bool SessionCodec::decode(const QJsonObject &root, RecordingSession &session)
 	meta.width = (w > 0 && w <= 32768) ? static_cast<uint32_t>(w) : 1920;
 	meta.height = (h > 0 && h <= 32768) ? static_cast<uint32_t>(h) : 1080;
 	std::vector<MemoMarker> markers;
-	for (const auto &value : root["markers"].toArray()) {
+	for (const auto value : root["markers"].toArray()) {
 		if (!value.isObject())
 			return false;
 		markers.push_back(decode_marker(value.toObject()));
