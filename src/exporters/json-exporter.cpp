@@ -1,4 +1,5 @@
 #include "json-exporter.hpp"
+#include "session-codec.hpp"
 
 #include <QDir>
 #include <QFileInfo>
@@ -10,7 +11,7 @@ bool JsonExporter::export_to_file(const RecordingSession &session, const std::st
 	QFileInfo fi(QString::fromStdString(output_path));
 	fi.dir().mkpath(".");
 
-	QJsonObject root = session.to_json();
+	QJsonObject root = SessionCodec::encode(session);
 	QJsonDocument doc(root);
 
 	QSaveFile file(QString::fromStdString(output_path));

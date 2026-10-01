@@ -14,6 +14,7 @@ class ObsBridge : public QObject {
 public:
 	static ObsBridge &instance();
 
+	std::string recovery_cache_directory() const;
 	void initialize();
 	void shutdown();
 

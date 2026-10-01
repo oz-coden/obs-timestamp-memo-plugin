@@ -2,6 +2,8 @@
 
 #include "memo-marker.hpp"
 #include "recording-session.hpp"
+#include "recording-timeline.hpp"
+#include "session-store.hpp"
 #include "timecode-helper.hpp"
 
 #include <memory>
@@ -20,7 +22,6 @@ public:
 
 	// Session inspection
 	const RecordingSession &session() const { return session_; }
-	RecordingSession &session() { return session_; }
 	bool is_recording() const;
 	bool is_paused() const;
 	uint64_t current_record_ms() const;
@@ -75,7 +76,10 @@ private:
 	void check_journal();
 
 	RecordingSession session_;
+	RecordingTimeline timeline_;
+	SessionStore store_;
+	void journal_update(uint32_t id);
+	void start_document(const std::string &path, const VideoFrameRate &fps, uint32_t width, uint32_t height);
 	bool initialized_ = false;
-	uint64_t segment_frame_offset_ = 0;
 	bool journal_warning_shown_ = false;
 };

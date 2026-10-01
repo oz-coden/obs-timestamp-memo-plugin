@@ -1,5 +1,9 @@
 #include "obs-stubs.hpp"
 #include "recording-session.hpp"
+#include "session-store.hpp"
+#include "session-codec.hpp"
+#include <QDateTime>
+#include <QUuid>
 #include "session-controller.hpp"
 #include "plugin-config.hpp"
 #include "exporter-registry.hpp"
@@ -74,34 +78,47 @@ static void timecodes()
 	std::cout << "PASS timecode DF/NDF boundaries and invalid inputs\n";
 }
 
+static bool begin(SessionStore &store, RecordingSession &session, const std::string &path, VideoFrameRate fps,
+		  uint32_t width, uint32_t height)
+{
+	session.replace({path, QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString(),
+			 QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs).toStdString(), fps, width,
+			 height});
+	return store.begin(session);
+}
+
 static void persistence(const QString &dir)
 {
 	for (const auto fps : {VideoFrameRate{30000, 1001}, VideoFrameRate{60000, 1001}, VideoFrameRate{24000, 1001}}) {
 		QString video = dir + "/録画-" + QString::number(fps.num) + ".mkv";
 		RecordingSession session;
-		CHECK(session.start_session(video.toStdString(), fps, 2560, 1440));
+		SessionStore session_store((dir + "/fallback").toStdString());
+		CHECK(begin(session_store, session, video.toStdString(), fps, 2560, 1440));
 		auto marker = session.add_marker(1000, 0, "日本語", "#3498db", "comment", false);
 		CHECK(session.update_marker(marker.id, "Cut", "#e74c3c", "changed", 3));
+		CHECK(session_store.append(
+			{{"op", "add"}, {"marker", SessionCodec::encode_marker(session.get_markers().front())}}));
 		std::string path;
-		CHECK(session.stop_session(&path));
+		CHECK(session_store.finish(session, true, &path));
 		CHECK(!path.empty());
 		RecordingSession loaded;
-		CHECK(loaded.load_from_json(path));
+		SessionStore loaded_store((dir + "/fallback").toStdString());
+		CHECK(loaded_store.load(path, loaded));
 		CHECK(loaded.frame_rate().num == fps.num && loaded.frame_rate().den == fps.den);
 		CHECK(loaded.get_markers().at(0).type_index == 3);
 		CHECK(loaded.get_markers().at(0).timecode_df == session.get_markers().at(0).timecode_df);
 		QString alias = dir + "/別名-" + QString::number(fps.num) + ".json";
 		write_file(alias, read_file(QString::fromStdString(path)));
 		QByteArray original = read_file(QString::fromStdString(path));
-		CHECK(loaded.load_from_json(alias.toStdString()));
+		CHECK(loaded_store.load(alias.toStdString(), loaded));
 		CHECK(loaded.update_marker(marker.id, "Updated", "#ffffff", "saved to source"));
-		CHECK(loaded.save_to_json());
+		CHECK(loaded_store.save(loaded));
 		CHECK(read_file(QString::fromStdString(path)) == original);
 		CHECK(read_file(alias).contains("saved to source"));
 		write_file(dir + "/bad.json", "{}");
-		auto before = loaded.to_json();
-		CHECK(!loaded.load_from_json((dir + "/bad.json").toStdString()));
-		CHECK(loaded.to_json() == before);
+		auto before = SessionCodec::encode(loaded);
+		CHECK(!loaded_store.load((dir + "/bad.json").toStdString(), loaded));
+		CHECK(SessionCodec::encode(loaded) == before);
 	}
 	std::cout << "PASS fractional FPS, type persistence, Unicode and source JSON isolation\n";
 }
@@ -109,54 +126,63 @@ static void persistence(const QString &dir)
 static void journaling(const QString &dir)
 {
 	RecordingSession first, second;
+	SessionStore first_store, second_store;
 	QString video = dir + "/reused.mkv";
-	CHECK(first.start_session(video.toStdString(), {60000, 1001}, 1920, 1080));
+	CHECK(begin(first_store, first, video.toStdString(), {60000, 1001}, 1920, 1080));
 	auto marker = first.add_marker(1001, 0, "First", "#3498db", "", false);
 	CHECK(first.update_marker(marker.id, "Type 3", "#e74c3c", "persisted", 3));
-	CHECK(first.stop_session(nullptr, false));
+	CHECK(first_store.append(
+		{{"op", "add"}, {"marker", SessionCodec::encode_marker(first.get_markers().front())}}));
+	CHECK(first_store.finish(first, false));
 	QStringList before = caches(dir);
 	CHECK(before.size() == 1);
 	QString first_cache = dir + "/" + before.front();
 	QByteArray original = read_file(first_cache);
-	CHECK(second.start_session(video.toStdString(), {60000, 1001}, 1920, 1080));
+	CHECK(begin(second_store, second, video.toStdString(), {60000, 1001}, 1920, 1080));
 	CHECK(caches(dir).size() == 2);
 	CHECK(read_file(first_cache) == original);
-	CHECK(second.stop_session(nullptr, false));
+	CHECK(second_store.finish(second, false));
 	CHECK(!QFile::exists(dir + "/reused.json"));
 	RecordingSession recovered;
-	CHECK(RecordingSession::recover_from_cache(first_cache.toStdString(), recovered));
+	SessionStore recovered_store((dir + "/fallback").toStdString());
+	CHECK(recovered_store.recover(first_cache.toStdString(), recovered));
 	CHECK(recovered.get_markers().at(0).type_index == 3);
 	CHECK(recovered.frame_rate().num == 60000 && recovered.frame_rate().den == 1001);
-	CHECK(recovered.save_to_json());
+	CHECK(recovered_store.save(recovered));
 	CHECK(!QFile::exists(first_cache));
 	CHECK(caches(dir).size() == 1);
 	write_file(dir + "/torn.tmp.jsonl", original + "{\"op\":");
-	CHECK(RecordingSession::recover_from_cache((dir + "/torn.tmp.jsonl").toStdString(), recovered));
+	CHECK(recovered_store.recover((dir + "/torn.tmp.jsonl").toStdString(), recovered));
 	CHECK(recovered.get_markers().size() == 1);
-	auto recovered_before = recovered.to_json();
+	auto recovered_before = SessionCodec::encode(recovered);
 	write_file(dir + "/corrupt.tmp.jsonl", original + "{broken}\n");
-	CHECK(!RecordingSession::recover_from_cache((dir + "/corrupt.tmp.jsonl").toStdString(), recovered));
-	CHECK(recovered.to_json() == recovered_before);
+	CHECK(!recovered_store.recover((dir + "/corrupt.tmp.jsonl").toStdString(), recovered));
+	CHECK(SessionCodec::encode(recovered) == recovered_before);
 
 	RecordingSession delayed;
-	CHECK(delayed.start_session("", {30000, 1001}, 1920, 1080));
-	delayed.add_marker(1000, 0, "Before path", "#3498db", "early", false);
+	SessionStore delayed_store((dir + "/fallback").toStdString());
+	CHECK(begin(delayed_store, delayed, "", {30000, 1001}, 1920, 1080));
+	auto early = delayed.add_marker(1000, 0, "Before path", "#3498db", "early", false);
+	CHECK(delayed_store.append({{"op", "add"}, {"marker", SessionCodec::encode_marker(early)}}));
 	QString fallback = dir + "/fallback";
 	CHECK(caches(fallback).size() == 1);
 	QString fallback_cache = fallback + "/" + caches(fallback).front();
 	delayed.set_video_path((dir + "/late.mkv").toStdString());
-	CHECK(RecordingSession::recover_from_cache(fallback_cache.toStdString(), recovered));
+	CHECK(delayed_store.append(
+		{{"op", "video_path"}, {"video_path", QString::fromStdString(delayed.video_path())}}));
+	CHECK(recovered_store.recover(fallback_cache.toStdString(), recovered));
 	CHECK(recovered.get_markers().at(0).comment == "early");
 	CHECK(recovered.video_path() == (dir + "/late.mkv").toStdString());
-	CHECK(delayed.stop_session());
+	CHECK(delayed_store.finish(delayed, true));
 	CHECK(!QFile::exists(fallback_cache));
 
 	RecordingSession failed;
+	SessionStore failed_store((dir + "/fallback").toStdString());
 	write_file(dir + "/blocked", "existing file");
-	CHECK(!failed.start_session((dir + "/blocked/video.mkv").toStdString(), {60, 1}, 1920, 1080));
-	CHECK(!failed.journal_healthy());
+	CHECK(!begin(failed_store, failed, (dir + "/blocked/video.mkv").toStdString(), {60, 1}, 1920, 1080));
+	CHECK(!failed_store.journal_healthy());
 	failed.add_marker(0, 0, "In memory", "", "", false);
-	CHECK(!failed.stop_session());
+	CHECK(!failed_store.finish(failed, true));
 	CHECK(failed.get_markers().size() == 1);
 	std::cout << "PASS unique journals, JSON disabled, delayed path recovery and I/O failure retention\n";
 }
@@ -164,12 +190,13 @@ static void journaling(const QString &dir)
 static void exports(const QString &dir)
 {
 	RecordingSession session;
-	CHECK(session.start_session((dir + "/exports.mkv").toStdString(), {60000, 1001}, 1920, 1080));
+	SessionStore session_store((dir + "/fallback").toStdString());
+	CHECK(begin(session_store, session, (dir + "/exports.mkv").toStdString(), {60000, 1001}, 1920, 1080));
 	session.add_marker(2000, 1, "late", "#ffffff", "& <tag>\n\ntext", false);
 	session.add_marker(0, 0, "早い", "#000000", "comma, quote\"", false);
 	session.add_marker(2500, 0, "same second", "", "control\x01", true);
 	RecordingSession snapshot(session);
-	CHECK(session.stop_session());
+	CHECK(session_store.finish(session, true));
 	session.clear_markers();
 	CHECK(snapshot.get_markers().size() == 3);
 	auto registry = ExporterRegistry::instance().get_all();

@@ -79,7 +79,6 @@ void ObsBridge::shutdown()
 		obs_hotkey_unregister(hotkey_focus_memo_id_);
 		hotkey_focus_memo_id_ = OBS_INVALID_HOTKEY_ID;
 	}
-
 }
 
 bool ObsBridge::is_recording() const
@@ -346,4 +345,14 @@ void ObsBridge::on_hotkey_focus_memo(void *data, obs_hotkey_id, obs_hotkey_t *, 
 	if (self) {
 		emit self->obsFocusMemoRequested();
 	}
+}
+
+std::string ObsBridge::recovery_cache_directory() const
+{
+	char *path = obs_module_config_path("cache");
+	if (!path)
+		return "";
+	std::string result = path;
+	bfree(path);
+	return result;
 }

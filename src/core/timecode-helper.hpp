@@ -10,6 +10,10 @@ struct VideoFrameRate {
 
 	double fps() const { return den == 0 ? 0.0 : static_cast<double>(num) / static_cast<double>(den); }
 
+	bool valid() const
+	{
+		return num > 0 && num <= 1000000 && den > 0 && den <= 1000000 && fps() >= 1.0 && fps() <= 1000.0;
+	}
 	bool is_drop_frame() const;
 };
 

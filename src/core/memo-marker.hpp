@@ -5,8 +5,6 @@
 #include <cstdint>
 #include <string>
 #include <vector>
-#include <QJsonObject>
-#include <QJsonArray>
 
 struct MarkerTypeConfig {
 	int type_index = 0;
@@ -31,10 +29,7 @@ public:
 
 	static MemoMarker create(uint32_t id, uint64_t ms, const VideoFrameRate &fps, int type_index,
 				 std::string_view label, std::string_view color, std::string_view comment,
-				 bool is_paused);
-
-	QJsonObject to_json() const;
-	static MemoMarker from_json(const QJsonObject &obj);
+				 bool is_paused, std::string created_at = "");
 
 	std::string active_timecode(const VideoFrameRate &fps) const;
 };

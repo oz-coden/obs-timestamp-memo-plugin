@@ -7,6 +7,8 @@ project(${_name} VERSION ${_version})
 option(ENABLE_FRONTEND_API "Use obs-frontend-api for UI functionality" ON)
 option(ENABLE_QT "Use Qt functionality" ON)
 
+add_compile_options($<$<CXX_COMPILER_ID:MSVC>:/EHsc>)
+
 if(NOT ENABLE_FRONTEND_API OR NOT ENABLE_QT)
   message(FATAL_ERROR "Timestamp Memo requires ENABLE_FRONTEND_API=ON and ENABLE_QT=ON")
 endif()
@@ -28,6 +30,7 @@ target_include_directories(
   ${CMAKE_PROJECT_NAME}
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
           ${CMAKE_CURRENT_SOURCE_DIR}/src/core
+          ${CMAKE_CURRENT_SOURCE_DIR}/src/persistence
           ${CMAKE_CURRENT_SOURCE_DIR}/src/exporters
           ${CMAKE_CURRENT_SOURCE_DIR}/src/obs
           ${CMAKE_CURRENT_SOURCE_DIR}/src/ui
@@ -62,7 +65,14 @@ endif()
 
 target_sources(
   ${CMAKE_PROJECT_NAME}
-  PRIVATE src/plugin-main.cpp
+  PRIVATE src/core/recording-timeline.hpp
+          src/persistence/session-codec.hpp
+          src/persistence/session-codec.cpp
+          src/persistence/session-store.hpp
+          src/persistence/session-store.cpp
+          src/exporters/text-formats.hpp
+          src/exporters/text-formats.cpp
+          src/plugin-main.cpp
           src/plugin-support.h
           src/core/timecode-helper.hpp
           src/core/timecode-helper.cpp

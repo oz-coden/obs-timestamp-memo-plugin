@@ -3,6 +3,9 @@
 #include "obs-bridge.hpp"
 #include "plugin-config.hpp"
 #include "status-notifier.hpp"
+#include "session-codec.hpp"
+#include <QDateTime>
+#include <QUuid>
 
 #include <plugin-support.h>
 #include <QDir>
@@ -31,6 +34,7 @@ void SessionController::initialize()
 	auto &bridge = ObsBridge::instance();
 	PluginConfig::instance().load();
 	StatusNotifier::instance().initialize();
+	store_.set_cache_directory(bridge.recovery_cache_directory());
 
 	connect(&bridge, &ObsBridge::obsRecordingStarted, this, &SessionController::onRecordingStarted);
 	connect(&bridge, &ObsBridge::obsRecordingPaused, this, &SessionController::onRecordingPaused);
@@ -64,30 +68,30 @@ void SessionController::shutdown()
 	disconnect(&bridge, nullptr, this, nullptr);
 	bridge.shutdown();
 	QCoreApplication::removePostedEvents(this, QEvent::MetaCall);
-	if (session_.is_active()) {
+	if (timeline_.active()) {
 		std::string path = session_.video_path();
-		if (!session_.stop_session(nullptr, PluginConfig::instance().auto_export.json))
+		if (!store_.finish(session_, PluginConfig::instance().auto_export.json))
 			obs_log(LOG_ERROR, "[Timestamp Memo] Failed to persist session during shutdown");
 		perform_auto_export(path);
 	}
+	timeline_.stop();
 	StatusNotifier::instance().shutdown();
 }
 
 bool SessionController::is_recording() const
 {
-	return ObsBridge::instance().is_recording();
+	return timeline_.active();
 }
 
 bool SessionController::is_paused() const
 {
-	return ObsBridge::instance().is_paused();
+	return timeline_.paused();
 }
 
 uint64_t SessionController::current_record_ms() const
 {
 	uint64_t frames = ObsBridge::instance().get_current_record_frames();
-	return TimecodeHelper::frame_index_to_ms(frames >= segment_frame_offset_ ? frames - segment_frame_offset_ : 0,
-						 session_.frame_rate());
+	return TimecodeHelper::frame_index_to_ms(timeline_.relative_frames(frames), session_.frame_rate());
 }
 
 VideoFrameRate SessionController::current_frame_rate() const
@@ -102,7 +106,7 @@ std::string SessionController::current_video_path() const
 
 bool SessionController::trigger_quick_marker(int type_index, const std::string &comment)
 {
-	if (!initialized_ || !is_recording() || !session_.is_active()) {
+	if (!initialized_ || !is_recording() || !timeline_.active()) {
 		StatusNotifier::instance().notify("Not recording! Cannot stamp marker.", 2000);
 		return false;
 	}
@@ -117,9 +121,11 @@ bool SessionController::trigger_quick_marker(int type_index, const std::string &
 	std::string label = cfg.marker_types[type_index].label;
 	std::string color = cfg.marker_types[type_index].color;
 	bool paused = is_paused();
-	uint64_t ms = current_record_ms();
 
-	MemoMarker m = session_.add_marker(ms, type_index, label, color, comment, paused);
+	MemoMarker m = session_.add_marker_at_frame(
+		timeline_.relative_frames(ObsBridge::instance().get_current_record_frames()), type_index, label, color,
+		comment, paused, QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs).toStdString());
+	store_.append({{"op", "add"}, {"marker", SessionCodec::encode_marker(m)}});
 	int row = static_cast<int>(session_.get_markers().size()) - 1;
 
 	std::string tc = m.active_timecode(session_.frame_rate());
@@ -143,6 +149,7 @@ bool SessionController::update_marker_comment(uint32_t id, const std::string &co
 		if (markers[i].id == id) {
 			session_.update_marker(id, markers[i].label, markers[i].color, comment);
 			markers[i].comment = comment;
+			journal_update(id);
 			persist_edits();
 			emit markerUpdated(markers[i], static_cast<int>(i));
 			return true;
@@ -167,6 +174,7 @@ bool SessionController::update_marker_type(uint32_t id, int type_index)
 			markers[i].label = label;
 			markers[i].color = color;
 			markers[i].type_index = type_index;
+			journal_update(id);
 			persist_edits();
 			emit markerUpdated(markers[i], static_cast<int>(i));
 			return true;
@@ -186,6 +194,7 @@ bool SessionController::update_marker_data(uint32_t id, const std::string &label
 			markers[i].label = label;
 			markers[i].color = final_color;
 			markers[i].comment = comment;
+			journal_update(id);
 			persist_edits();
 			emit markerUpdated(markers[i], static_cast<int>(i));
 			return true;
@@ -200,6 +209,8 @@ bool SessionController::delete_marker(uint32_t id)
 	for (size_t i = 0; i < markers.size(); ++i) {
 		if (markers[i].id == id) {
 			session_.delete_marker(id);
+			if (timeline_.active())
+				store_.append({{"op", "delete"}, {"id", static_cast<qint64>(id)}});
 			persist_edits();
 			emit markerRemoved(id, static_cast<int>(i));
 			return true;
@@ -211,6 +222,8 @@ bool SessionController::delete_marker(uint32_t id)
 void SessionController::clear_markers()
 {
 	session_.clear_markers();
+	if (timeline_.active())
+		store_.append({{"op", "clear"}});
 	persist_edits();
 	emit markersReset({}, session_.frame_rate());
 }
@@ -220,7 +233,7 @@ bool SessionController::load_from_json(const std::string &path)
 	if (is_recording())
 		return false;
 
-	if (session_.load_from_json(path)) {
+	if (store_.load(path, session_)) {
 		emit markersReset(session_.get_markers(), session_.frame_rate());
 		return true;
 	}
@@ -232,7 +245,7 @@ bool SessionController::recover_from_cache(const std::string &cache_path)
 	if (is_recording())
 		return false;
 
-	if (RecordingSession::recover_from_cache(cache_path, session_)) {
+	if (store_.recover(cache_path, session_)) {
 		emit markersReset(session_.get_markers(), session_.frame_rate());
 		return true;
 	}
@@ -246,9 +259,9 @@ void SessionController::save_current_session()
 
 void SessionController::persist_edits()
 {
-	if (session_.is_active()) {
+	if (timeline_.active()) {
 		check_journal();
-	} else if (!session_.save_to_json()) {
+	} else if (!store_.save(session_)) {
 		StatusNotifier::instance().notify(
 			"Warning: Failed to save edited markers. Export JSON to preserve changes.", 5000);
 	}
@@ -256,7 +269,7 @@ void SessionController::persist_edits()
 
 void SessionController::check_journal()
 {
-	if (!session_.journal_healthy() && !journal_warning_shown_) {
+	if (!store_.journal_healthy() && !journal_warning_shown_) {
 		journal_warning_shown_ = true;
 		StatusNotifier::instance().notify(
 			"Warning: Recovery cache could not be written. Export JSON to preserve markers.", 5000);
@@ -314,13 +327,14 @@ void SessionController::check_recording_file_changed()
 	if (session_.video_path().empty()) {
 		obs_log(LOG_INFO, "[Timestamp Memo] Late video path resolution: '%s'", current_path.c_str());
 		session_.set_video_path(current_path);
+		store_.append({{"op", "video_path"}, {"video_path", QString::fromStdString(current_path)}});
 		emit videoPathResolved(QString::fromStdString(current_path));
 	}
 }
 
 void SessionController::onRecordingStarted()
 {
-	if (!initialized_ || session_.is_active())
+	if (!initialized_ || timeline_.active())
 		return;
 	auto &bridge = ObsBridge::instance();
 	std::string path = bridge.get_current_record_file_path();
@@ -328,8 +342,10 @@ void SessionController::onRecordingStarted()
 	uint32_t width = 1920, height = 1080;
 	bridge.get_video_dimension(width, height);
 
-	session_.start_session(path, fps, width, height);
-	segment_frame_offset_ = 0;
+	timeline_.start();
+	start_document(path, fps, width, height);
+	if (bridge.is_paused())
+		timeline_.pause();
 	journal_warning_shown_ = false;
 
 	emit markersReset({}, fps);
@@ -340,30 +356,36 @@ void SessionController::onRecordingStarted()
 
 void SessionController::onRecordingPaused()
 {
+	if (!timeline_.pause())
+		return;
 	emit sessionPaused();
 	StatusNotifier::instance().notify("Recording paused", 2000);
 }
 
 void SessionController::onRecordingUnpaused()
 {
+	if (!timeline_.resume())
+		return;
 	emit sessionResumed();
 	StatusNotifier::instance().notify("Recording resumed", 2000);
 }
 
 void SessionController::onRecordingStopped()
 {
-	if (!initialized_ || !session_.is_active())
+	if (!initialized_ || !timeline_.active())
 		return;
 	std::string video_path = session_.video_path();
 	if (video_path.empty()) {
 		video_path = ObsBridge::instance().get_current_record_file_path();
 		if (!video_path.empty()) {
 			session_.set_video_path(video_path);
+			store_.append({{"op", "video_path"}, {"video_path", QString::fromStdString(video_path)}});
 		}
 	}
 
 	std::string json_path;
-	bool save_ok = session_.stop_session(&json_path, PluginConfig::instance().auto_export.json);
+	bool save_ok = store_.finish(session_, PluginConfig::instance().auto_export.json, &json_path);
+	timeline_.stop();
 
 	bool export_ok = perform_auto_export(video_path);
 
@@ -379,11 +401,11 @@ void SessionController::onRecordingStopped()
 
 void SessionController::onRecordingFileSplit(const QString &path, uint64_t frame_offset)
 {
-	if (!initialized_ || !session_.is_active() || path.isEmpty() || path.toStdString() == session_.video_path())
+	if (!initialized_ || !timeline_.active() || path.isEmpty() || path.toStdString() == session_.video_path())
 		return;
 	std::string old_video_path = session_.video_path();
 	std::string old_json_path;
-	bool save_ok = session_.stop_session(&old_json_path, PluginConfig::instance().auto_export.json);
+	bool save_ok = store_.finish(session_, PluginConfig::instance().auto_export.json, &old_json_path);
 	if (!save_ok) {
 		obs_log(LOG_ERROR, "[Timestamp Memo] Failed to save previous segment JSON on file split");
 	}
@@ -395,8 +417,8 @@ void SessionController::onRecordingFileSplit(const QString &path, uint64_t frame
 	uint32_t width = 1920, height = 1080;
 	bridge.get_video_dimension(width, height);
 
-	session_.start_session(new_path, fps, width, height);
-	segment_frame_offset_ = frame_offset;
+	timeline_.split(frame_offset);
+	start_document(new_path, fps, width, height);
 	journal_warning_shown_ = false;
 
 	emit markersReset({}, fps);
@@ -406,4 +428,25 @@ void SessionController::onRecordingFileSplit(const QString &path, uint64_t frame
 	if (!save_ok || !export_ok)
 		StatusNotifier::instance().notify(
 			"Warning: Previous segment could not be saved. Check the recovery cache and OBS log.", 5000);
+}
+
+void SessionController::start_document(const std::string &path, const VideoFrameRate &fps, uint32_t width,
+				       uint32_t height)
+{
+	session_.replace({path, QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString(),
+			  QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs).toStdString(), fps, width,
+			  height});
+	store_.begin(session_);
+}
+void SessionController::journal_update(uint32_t id)
+{
+	if (!timeline_.active())
+		return;
+	for (const auto &m : session_.get_markers())
+		if (m.id == id) {
+			auto op = SessionCodec::encode_marker(m);
+			op["op"] = "update";
+			store_.append(op);
+			break;
+		}
 }

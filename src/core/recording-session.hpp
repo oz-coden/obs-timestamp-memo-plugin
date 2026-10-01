@@ -1,74 +1,36 @@
 #pragma once
-
 #include "memo-marker.hpp"
-#include "timecode-helper.hpp"
-
-#include <cstdint>
-#include <memory>
-#include <mutex>
 #include <string>
 #include <vector>
-#include <QFile>
-#include <QJsonObject>
-#include <QTextStream>
-
+struct SessionMetadata {
+	std::string video_path, session_id, started_at;
+	VideoFrameRate fps{60, 1};
+	uint32_t width = 1920, height = 1080;
+};
+// Value document: no OBS, Qt, clock, settings or disk dependencies.
 class RecordingSession {
 public:
-	RecordingSession();
-	RecordingSession(const RecordingSession &other);
-	RecordingSession &operator=(const RecordingSession &) = delete;
-	~RecordingSession();
-
-	bool start_session(const std::string &video_path, const VideoFrameRate &fps, uint32_t width, uint32_t height);
-	bool stop_session(std::string *out_json_path = nullptr, bool save_json = true);
-
-	static bool recover_from_cache(const std::string &cache_path, RecordingSession &out_session);
-
-	bool load_from_json(const std::string &json_path);
-	bool save_to_json(const std::string &target_json_path = "");
-
-	MemoMarker add_marker(uint64_t ms, int type_index, const std::string &label, const std::string &color,
-			      const std::string &comment, bool is_paused);
-
-	bool update_marker(uint32_t marker_id, const std::string &label, const std::string &color,
-			   const std::string &comment, int type_index = -1);
-
-	bool delete_marker(uint32_t marker_id);
-	void clear_markers();
-
-	bool is_active() const;
-	std::string video_path() const;
-	void set_video_path(const std::string &path);
-	std::string session_id() const;
-	std::string started_at() const;
-	VideoFrameRate frame_rate() const;
-	uint32_t width() const;
-	uint32_t height() const;
-	std::vector<MemoMarker> get_markers() const;
-	bool journal_healthy() const;
-
-	QJsonObject to_json() const;
+	void replace(SessionMetadata metadata, std::vector<MemoMarker> markers = {});
+	MemoMarker add_marker(uint64_t ms, int type, const std::string &label, const std::string &color,
+			      const std::string &comment, bool paused, std::string created_at = "");
+	MemoMarker add_marker_at_frame(uint64_t frame, int type, const std::string &label, const std::string &color,
+				       const std::string &comment, bool paused, std::string created_at = "");
+	bool update_marker(uint32_t id, const std::string &label, const std::string &color, const std::string &comment,
+			   int type = -1);
+	bool delete_marker(uint32_t id);
+	void clear_markers() { markers_.clear(); }
+	void set_video_path(const std::string &path) { metadata_.video_path = path; }
+	const SessionMetadata &metadata() const { return metadata_; }
+	const std::string &video_path() const { return metadata_.video_path; }
+	const std::string &session_id() const { return metadata_.session_id; }
+	const std::string &started_at() const { return metadata_.started_at; }
+	VideoFrameRate frame_rate() const { return metadata_.fps; }
+	uint32_t width() const { return metadata_.width; }
+	uint32_t height() const { return metadata_.height; }
+	const std::vector<MemoMarker> &get_markers() const { return markers_; }
 
 private:
-	std::string get_cache_file_path() const;
-	bool open_journal();
-	bool flush_journal_entry(const QJsonObject &entry);
-	void cleanup_cache_file(bool force = false);
-
-	mutable std::recursive_mutex mutex_;
-	bool active_ = false;
-	std::string video_path_;
-	std::string session_id_;
-	std::string started_at_;
-	VideoFrameRate fps_{60, 1};
-	uint32_t width_ = 1920;
-	uint32_t height_ = 1080;
+	SessionMetadata metadata_;
 	std::vector<MemoMarker> markers_;
 	uint32_t next_marker_id_ = 1;
-
-	std::unique_ptr<QFile> cache_file_;
-	std::unique_ptr<QTextStream> cache_stream_;
-	std::string cache_file_path_;
-	std::string source_json_path_;
-	bool journal_healthy_ = false;
 };
