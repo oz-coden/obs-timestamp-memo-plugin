@@ -14,6 +14,8 @@ std::string VttExporter::export_to_string(const RecordingSession &session)
 	ss << "WEBVTT\n\n";
 
 	auto markers = session.get_markers();
+	std::stable_sort(markers.begin(), markers.end(),
+			 [](const auto &a, const auto &b) { return a.timestamp_ms < b.timestamp_ms; });
 	int cue_index = 1;
 
 	for (size_t i = 0; i < markers.size(); ++i) {
@@ -32,10 +34,16 @@ std::string VttExporter::export_to_string(const RecordingSession &session)
 		ss << TimecodeHelper::ms_to_timestamp_str(start_ms, true) << " --> "
 		   << TimecodeHelper::ms_to_timestamp_str(end_ms, true) << "\n";
 
-		ss << "[" << m.label << "]";
+		QString payload = "[" + QString::fromStdString(m.label) + "]";
 		if (!m.comment.empty()) {
-			ss << " " << m.comment;
+			payload += " " + QString::fromStdString(m.comment);
 		}
+		payload.replace('&', "&amp;");
+		payload.replace('<', "&lt;");
+		payload.replace('>', "&gt;");
+		payload.replace('\r', ' ');
+		payload.replace('\n', ' ');
+		ss << payload.toStdString();
 		ss << "\n\n";
 	}
 

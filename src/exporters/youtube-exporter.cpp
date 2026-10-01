@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <limits>
 #include <QDir>
 #include <QFileInfo>
 #include <QSaveFile>
@@ -29,6 +30,8 @@ static std::string format_youtube_timestamp(uint64_t ms, bool use_hours)
 std::string YoutubeExporter::generate_chapters(const RecordingSession &session)
 {
 	auto markers = session.get_markers();
+	std::stable_sort(markers.begin(), markers.end(),
+			 [](const auto &a, const auto &b) { return a.timestamp_ms < b.timestamp_ms; });
 
 	bool use_hours = false;
 	for (const auto &m : markers) {
@@ -50,6 +53,7 @@ std::string YoutubeExporter::generate_chapters(const RecordingSession &session)
 		result += format_youtube_timestamp(0, use_hours) + " Start\n";
 	}
 
+	uint64_t previous_second = std::numeric_limits<uint64_t>::max();
 	for (const auto &m : markers) {
 		std::string title;
 		if (!m.label.empty() && !m.comment.empty()) {
@@ -66,7 +70,13 @@ std::string YoutubeExporter::generate_chapters(const RecordingSession &session)
 		std::replace(title.begin(), title.end(), '\n', ' ');
 		std::replace(title.begin(), title.end(), '\r', ' ');
 
-		result += format_youtube_timestamp(m.timestamp_ms, use_hours) + " " + title + "\n";
+		if (m.timestamp_ms / 1000 == previous_second) {
+			result.pop_back();
+			result += " / " + title + "\n";
+		} else {
+			result += format_youtube_timestamp(m.timestamp_ms, use_hours) + " " + title + "\n";
+		}
+		previous_second = m.timestamp_ms / 1000;
 	}
 
 	return result;

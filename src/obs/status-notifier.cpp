@@ -7,6 +7,8 @@
 #include <QMainWindow>
 #include <QMetaObject>
 #include <QStatusBar>
+#include <QCoreApplication>
+#include <QEvent>
 
 StatusNotifier &StatusNotifier::instance()
 {
@@ -19,7 +21,8 @@ StatusNotifier::StatusNotifier()
 	connect(
 		this, &StatusNotifier::notificationRequested, this,
 		[](const QString &msg, int timeout) {
-			if (!PluginConfig::instance().show_status_bar_notification) {
+			if (!StatusNotifier::instance().enabled_ ||
+			    !PluginConfig::instance().show_status_bar_notification) {
 				return;
 			}
 
@@ -29,6 +32,17 @@ StatusNotifier::StatusNotifier()
 			}
 		},
 		Qt::QueuedConnection);
+}
+
+void StatusNotifier::initialize()
+{
+	enabled_ = true;
+}
+
+void StatusNotifier::shutdown()
+{
+	enabled_ = false;
+	QCoreApplication::removePostedEvents(this, QEvent::MetaCall);
 }
 
 void StatusNotifier::notify(const std::string &message, int timeout_ms)

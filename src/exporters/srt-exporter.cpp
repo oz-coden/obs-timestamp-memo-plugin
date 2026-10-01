@@ -23,9 +23,11 @@ bool SrtExporter::export_to_file(const RecordingSession &session, const std::str
 #endif
 
 	// UTF-8 BOM
-	out << "\xEF\xBB\xBF";
+	out.setGenerateByteOrderMark(true);
 
 	auto markers = session.get_markers();
+	std::stable_sort(markers.begin(), markers.end(),
+			 [](const auto &a, const auto &b) { return a.timestamp_ms < b.timestamp_ms; });
 	int cue_index = 1;
 
 	for (size_t i = 0; i < markers.size(); ++i) {
@@ -48,6 +50,8 @@ bool SrtExporter::export_to_file(const RecordingSession &session, const std::str
 		if (!m.comment.empty()) {
 			text += " " + QString::fromStdString(m.comment);
 		}
+		text.replace('\r', ' ');
+		text.replace('\n', ' ');
 		out << text << "\n\n";
 	}
 

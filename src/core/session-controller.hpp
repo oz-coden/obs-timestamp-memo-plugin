@@ -43,7 +43,7 @@ public:
 	void save_current_session();
 
 	// Auto export
-	void perform_auto_export(const std::string &base_video_path);
+	bool perform_auto_export(const std::string &base_video_path);
 
 	// Periodic / Polling
 	void check_recording_file_changed();
@@ -70,8 +70,12 @@ private:
 	void onRecordingPaused();
 	void onRecordingUnpaused();
 	void onRecordingStopped();
-	void onRecordingFileSplit();
+	void onRecordingFileSplit(const QString &path, uint64_t frame_offset);
+	void persist_edits();
+	void check_journal();
 
 	RecordingSession session_;
 	bool initialized_ = false;
+	uint64_t segment_frame_offset_ = 0;
+	bool journal_warning_shown_ = false;
 };

@@ -3,6 +3,7 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QDir>
+#include <QColor>
 
 PluginConfig &PluginConfig::instance()
 {
@@ -49,7 +50,8 @@ void PluginConfig::load()
 		QString color =
 			settings.value(prefix + "color", QString::fromStdString(marker_types[i].color)).toString();
 		marker_types[i].label = label.toStdString();
-		marker_types[i].color = color.toStdString();
+		if (QColor(color).isValid())
+			marker_types[i].color = QColor(color).name().toStdString();
 	}
 	settings.endGroup();
 
@@ -70,7 +72,7 @@ void PluginConfig::load()
 	settings.endGroup();
 }
 
-void PluginConfig::save()
+bool PluginConfig::save()
 {
 	QSettings settings("oz-coden", "obs-timestamp-memo");
 
@@ -100,4 +102,5 @@ void PluginConfig::save()
 
 	settings.sync();
 	emit configChanged();
+	return settings.status() == QSettings::NoError;
 }

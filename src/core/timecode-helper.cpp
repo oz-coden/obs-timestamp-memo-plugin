@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <charconv>
 #include <iomanip>
 #include <sstream>
 
@@ -112,25 +113,38 @@ uint64_t TimecodeHelper::smpte_to_frame_index(std::string_view timecode, const V
 	if (timecode.length() < 11)
 		return 0;
 
-	char buf[32];
-	size_t len = std::min(timecode.length(), sizeof(buf) - 1);
-	std::memcpy(buf, timecode.data(), len);
-	buf[len] = '\0';
-
-	unsigned int hh = 0, mm = 0, ss = 0, ff = 0;
-	char sep = ':';
-	if (std::sscanf(buf, "%u:%u:%u%c%u", &hh, &mm, &ss, &sep, &ff) < 4) {
+	size_t first = timecode.find(':');
+	size_t second = first == std::string_view::npos ? first : timecode.find(':', first + 1);
+	size_t third = second == std::string_view::npos ? second : timecode.find_first_of(":;.", second + 1);
+	if (third == std::string_view::npos)
+		return 0;
+	auto parse_field = [](std::string_view field, uint32_t &value) {
+		auto result = std::from_chars(field.data(), field.data() + field.size(), value);
+		return result.ec == std::errc() && result.ptr == field.data() + field.size();
+	};
+	uint32_t hh = 0, mm = 0, ss = 0, ff = 0;
+	char sep = timecode[third];
+	if (!parse_field(timecode.substr(0, first), hh) ||
+	    !parse_field(timecode.substr(first + 1, second - first - 1), mm) ||
+	    !parse_field(timecode.substr(second + 1, third - second - 1), ss) ||
+	    !parse_field(timecode.substr(third + 1), ff)) {
 		return 0;
 	}
 
 	double nominal_fps = std::round(fps.fps());
-	if (nominal_fps <= 0.0)
-		nominal_fps = 30.0;
+	if (nominal_fps <= 0.0 || nominal_fps > 1000.0 || mm >= 60 || ss >= 60 || ff >= nominal_fps)
+		return 0;
 
-	bool is_df = (sep == ';' || sep == '.') || fps.is_drop_frame();
+	if (sep != ':' && sep != ';' && sep != '.')
+		return 0;
+	bool is_df = (sep == ';' || sep == '.');
+	if (is_df && !fps.is_drop_frame())
+		return 0;
 
 	if (is_df) {
 		uint64_t drop_frames = (nominal_fps >= 50.0) ? 4 : 2;
+		if (mm % 10 != 0 && ss == 0 && ff < drop_frames)
+			return 0;
 		uint64_t total_minutes = static_cast<uint64_t>(hh) * 60 + mm;
 		uint64_t total_frames = ((total_minutes * 60 + ss) * static_cast<uint64_t>(nominal_fps)) + ff;
 		uint64_t dropped = drop_frames * (total_minutes - (total_minutes / 10));

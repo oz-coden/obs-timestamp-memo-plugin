@@ -1,5 +1,9 @@
 #include "obs-bridge.hpp"
 #include <plugin-support.h>
+#include <QCoreApplication>
+#include <QEvent>
+#include <limits>
+#include <numeric>
 
 ObsBridge &ObsBridge::instance()
 {
@@ -38,6 +42,8 @@ void ObsBridge::initialize()
 		"obs_timestamp_memo_focus_input", "Timestamp Memo: Focus Memo Input", on_hotkey_focus_memo, this);
 
 	initialized_ = true;
+	if (is_recording())
+		attach_recording_output();
 	obs_log(LOG_INFO, "[Timestamp Memo] ObsBridge initialized");
 }
 
@@ -45,6 +51,10 @@ void ObsBridge::shutdown()
 {
 	if (!initialized_)
 		return;
+	QCoreApplication::sendPostedEvents(this, QEvent::MetaCall);
+	initialized_ = false;
+	detach_recording_output();
+	QCoreApplication::removePostedEvents(this, QEvent::MetaCall);
 
 	obs_frontend_remove_event_callback(on_frontend_event, this);
 	obs_frontend_remove_save_callback(on_save, this);
@@ -70,7 +80,6 @@ void ObsBridge::shutdown()
 		hotkey_focus_memo_id_ = OBS_INVALID_HOTKEY_ID;
 	}
 
-	initialized_ = false;
 }
 
 bool ObsBridge::is_recording() const
@@ -85,10 +94,11 @@ bool ObsBridge::is_paused() const
 
 uint64_t ObsBridge::get_current_record_ms() const
 {
-	if (!obs_frontend_recording_active()) {
-		return 0;
-	}
+	return TimecodeHelper::frame_index_to_ms(get_current_record_frames(), get_current_frame_rate());
+}
 
+uint64_t ObsBridge::get_current_record_frames() const
+{
 	obs_output_t *output = obs_frontend_get_recording_output();
 	if (!output) {
 		return 0;
@@ -97,14 +107,13 @@ uint64_t ObsBridge::get_current_record_ms() const
 	int total_frames = obs_output_get_total_frames(output);
 	obs_output_release(output);
 
-	if (total_frames > 0) {
-		return TimecodeHelper::frame_index_to_ms(static_cast<uint64_t>(total_frames), get_current_frame_rate());
-	}
-	return 0;
+	return total_frames > 0 ? static_cast<uint64_t>(total_frames) : 0;
 }
 
 std::string ObsBridge::get_current_record_file_path() const
 {
+	if (!recording_path_.empty())
+		return recording_path_;
 	std::string file_path = "";
 	obs_output_t *output = obs_frontend_get_recording_output();
 	if (output) {
@@ -127,13 +136,70 @@ std::string ObsBridge::get_current_record_file_path() const
 	return file_path;
 }
 
+void ObsBridge::attach_recording_output()
+{
+	detach_recording_output();
+	recording_path_.clear();
+	recording_path_ = get_current_record_file_path();
+	recording_output_ = obs_frontend_get_recording_output();
+	if (recording_output_)
+		signal_handler_connect(obs_output_get_signal_handler(recording_output_), "file_changed",
+				       on_file_changed, this);
+}
+
+void ObsBridge::detach_recording_output()
+{
+	++output_generation_;
+	if (recording_output_) {
+		signal_handler_disconnect(obs_output_get_signal_handler(recording_output_), "file_changed",
+					  on_file_changed, this);
+		obs_output_release(recording_output_);
+		recording_output_ = nullptr;
+	}
+}
+
+void ObsBridge::on_file_changed(void *data, calldata_t *params)
+{
+	auto *self = static_cast<ObsBridge *>(data);
+	const char *path = calldata_string(params, "next_file");
+	if (!self || !path || !*path)
+		return;
+	QString next_path = QString::fromUtf8(path);
+	int total = obs_output_get_total_frames(self->recording_output_);
+	uint64_t frames = total > 0 ? static_cast<uint64_t>(total) : 0;
+	uint64_t generation = self->output_generation_.load();
+	QMetaObject::invokeMethod(
+		self,
+		[self, next_path, frames, generation]() {
+			if (!self->initialized_ || generation != self->output_generation_.load())
+				return;
+			self->recording_path_ = next_path.toStdString();
+			emit self->obsRecordingFileChanged(next_path, frames);
+		},
+		Qt::QueuedConnection);
+}
+
 VideoFrameRate ObsBridge::get_current_frame_rate() const
 {
-	struct obs_video_info ovi;
-	if (obs_get_video_info(&ovi)) {
-		return VideoFrameRate{ovi.fps_num, ovi.fps_den};
+	struct obs_video_info ovi{};
+	VideoFrameRate rate{60, 1};
+	if (obs_get_video_info(&ovi) && ovi.fps_num && ovi.fps_den)
+		rate = VideoFrameRate{ovi.fps_num, ovi.fps_den};
+	obs_output_t *output = obs_frontend_get_recording_output();
+	if (output) {
+		obs_encoder_t *encoder = obs_output_get_video_encoder(output);
+		uint32_t divisor = encoder ? obs_encoder_get_frame_rate_divisor(encoder) : 1;
+		if (divisor > 1) {
+			uint32_t common = std::gcd(rate.num, divisor);
+			divisor /= common;
+			if (rate.den <= std::numeric_limits<uint32_t>::max() / divisor) {
+				rate.num /= common;
+				rate.den *= divisor;
+			}
+		}
+		obs_output_release(output);
 	}
-	return VideoFrameRate{60, 1};
+	return rate;
 }
 
 void ObsBridge::get_video_dimension(uint32_t &width, uint32_t &height) const
@@ -146,6 +212,15 @@ void ObsBridge::get_video_dimension(uint32_t &width, uint32_t &height) const
 		width = 1920;
 		height = 1080;
 	}
+	obs_output_t *output = obs_frontend_get_recording_output();
+	if (output) {
+		obs_encoder_t *encoder = obs_output_get_video_encoder(output);
+		if (encoder && obs_encoder_get_width(encoder) && obs_encoder_get_height(encoder)) {
+			width = obs_encoder_get_width(encoder);
+			height = obs_encoder_get_height(encoder);
+		}
+		obs_output_release(output);
+	}
 }
 
 void ObsBridge::on_frontend_event(enum obs_frontend_event event, void *private_data)
@@ -156,6 +231,7 @@ void ObsBridge::on_frontend_event(enum obs_frontend_event event, void *private_d
 
 	switch (event) {
 	case OBS_FRONTEND_EVENT_RECORDING_STARTED:
+		self->attach_recording_output();
 		emit self->obsRecordingStarted();
 		break;
 	case OBS_FRONTEND_EVENT_RECORDING_PAUSED:
@@ -165,7 +241,12 @@ void ObsBridge::on_frontend_event(enum obs_frontend_event event, void *private_d
 		emit self->obsRecordingUnpaused();
 		break;
 	case OBS_FRONTEND_EVENT_RECORDING_STOPPED:
+		QCoreApplication::sendPostedEvents(self, QEvent::MetaCall);
 		emit self->obsRecordingStopped();
+		self->detach_recording_output();
+		break;
+	case OBS_FRONTEND_EVENT_EXIT:
+		self->shutdown();
 		break;
 	default:
 		break;
@@ -175,7 +256,7 @@ void ObsBridge::on_frontend_event(enum obs_frontend_event event, void *private_d
 void ObsBridge::on_save(obs_data_t *save_data, bool saving, void *private_data)
 {
 	auto *self = static_cast<ObsBridge *>(private_data);
-	if (!self)
+	if (!self || !save_data)
 		return;
 
 	if (saving) {

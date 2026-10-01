@@ -30,7 +30,7 @@ bool CsvExporter::export_to_file(const RecordingSession &session, const std::str
 #endif
 
 	// UTF-8 BOM
-	out << "\xEF\xBB\xBF";
+	out.setGenerateByteOrderMark(true);
 
 	out << "Index,Timecode In,Timecode Out,Frame In,Elapsed Ms,Marker Name,Comment,Color,Status\n";
 

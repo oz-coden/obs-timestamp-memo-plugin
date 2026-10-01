@@ -15,10 +15,12 @@
 class RecordingSession {
 public:
 	RecordingSession();
+	RecordingSession(const RecordingSession &other);
+	RecordingSession &operator=(const RecordingSession &) = delete;
 	~RecordingSession();
 
 	bool start_session(const std::string &video_path, const VideoFrameRate &fps, uint32_t width, uint32_t height);
-	bool stop_session(std::string *out_json_path = nullptr);
+	bool stop_session(std::string *out_json_path = nullptr, bool save_json = true);
 
 	static bool recover_from_cache(const std::string &cache_path, RecordingSession &out_session);
 
@@ -29,7 +31,7 @@ public:
 			      const std::string &comment, bool is_paused);
 
 	bool update_marker(uint32_t marker_id, const std::string &label, const std::string &color,
-			   const std::string &comment);
+			   const std::string &comment, int type_index = -1);
 
 	bool delete_marker(uint32_t marker_id);
 	void clear_markers();
@@ -43,12 +45,14 @@ public:
 	uint32_t width() const;
 	uint32_t height() const;
 	std::vector<MemoMarker> get_markers() const;
+	bool journal_healthy() const;
 
 	QJsonObject to_json() const;
 
 private:
 	std::string get_cache_file_path() const;
-	void flush_journal_entry(const QJsonObject &entry);
+	bool open_journal();
+	bool flush_journal_entry(const QJsonObject &entry);
 	void cleanup_cache_file(bool force = false);
 
 	mutable std::recursive_mutex mutex_;
@@ -65,4 +69,6 @@ private:
 	std::unique_ptr<QFile> cache_file_;
 	std::unique_ptr<QTextStream> cache_stream_;
 	std::string cache_file_path_;
+	std::string source_json_path_;
+	bool journal_healthy_ = false;
 };

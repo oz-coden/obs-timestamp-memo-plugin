@@ -10,10 +10,24 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSaveFile>
+#include <obs-module.h>
 #include <QUuid>
 #include <unordered_set>
 
 RecordingSession::RecordingSession() {}
+
+RecordingSession::RecordingSession(const RecordingSession &other)
+{
+	std::lock_guard<std::recursive_mutex> lock(other.mutex_);
+	video_path_ = other.video_path_;
+	session_id_ = other.session_id_;
+	started_at_ = other.started_at_;
+	fps_ = other.fps_;
+	width_ = other.width_;
+	height_ = other.height_;
+	markers_ = other.markers_;
+	next_marker_id_ = other.next_marker_id_;
+}
 
 RecordingSession::~RecordingSession()
 {
@@ -29,6 +43,8 @@ bool RecordingSession::start_session(const std::string &video_path, const VideoF
 				     uint32_t height)
 {
 	std::lock_guard<std::recursive_mutex> lock(mutex_);
+	if (active_)
+		return false;
 
 	if (cache_stream_) {
 		cache_stream_->flush();
@@ -52,14 +68,21 @@ bool RecordingSession::start_session(const std::string &video_path, const VideoF
 	started_at_ = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs).toStdString();
 	markers_.clear();
 	next_marker_id_ = 1;
+	source_json_path_.clear();
+	cache_file_path_.clear();
+	journal_healthy_ = open_journal();
+	return journal_healthy_;
+}
 
+bool RecordingSession::open_journal()
+{
 	cache_file_path_ = get_cache_file_path();
 	if (!cache_file_path_.empty()) {
 		QFileInfo cfi(QString::fromStdString(cache_file_path_));
 		cfi.dir().mkpath(".");
 
 		auto file = std::make_unique<QFile>(QString::fromStdString(cache_file_path_));
-		if (file->open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
+		if (file->open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::NewOnly)) {
 			cache_file_ = std::move(file);
 			cache_stream_ = std::make_unique<QTextStream>(cache_file_.get());
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
@@ -76,16 +99,14 @@ bool RecordingSession::start_session(const std::string &video_path, const VideoF
 			header["width"] = static_cast<qint64>(width_);
 			header["height"] = static_cast<qint64>(height_);
 
-			QJsonDocument doc(header);
-			*cache_stream_ << QString::fromUtf8(doc.toJson(QJsonDocument::Compact)) << "\n";
-			cache_stream_->flush();
+			return flush_journal_entry(header);
 		}
 	}
 
-	return true;
+	return false;
 }
 
-bool RecordingSession::stop_session(std::string *out_json_path)
+bool RecordingSession::stop_session(std::string *out_json_path, bool save_json)
 {
 	std::lock_guard<std::recursive_mutex> lock(mutex_);
 
@@ -107,7 +128,7 @@ bool RecordingSession::stop_session(std::string *out_json_path)
 	std::string json_path = "";
 	bool save_ok = false;
 
-	if (!video_path_.empty()) {
+	if (save_json && !video_path_.empty()) {
 		QFileInfo fi(QString::fromStdString(video_path_));
 		fi.dir().mkpath(".");
 		QString target = fi.dir().filePath(fi.completeBaseName() + ".json");
@@ -120,30 +141,45 @@ bool RecordingSession::stop_session(std::string *out_json_path)
 	}
 
 	if (out_json_path) {
-		*out_json_path = json_path;
+		*out_json_path = save_ok ? json_path : "";
 	}
 
-	return save_ok;
+	return save_json ? save_ok : journal_healthy_;
 }
 
 std::string RecordingSession::get_cache_file_path() const
 {
-	if (video_path_.empty()) {
-		return "";
-	}
 	QFileInfo fi(QString::fromStdString(video_path_));
-	return fi.dir().filePath(fi.completeBaseName() + ".tmp.jsonl").toStdString();
+	QDir dir = fi.dir();
+	if (video_path_.empty()) {
+		char *config_path = obs_module_config_path("cache");
+		if (!config_path)
+			return "";
+		dir = QDir(QString::fromUtf8(config_path));
+		bfree(config_path);
+	}
+	QString stem = video_path_.empty() ? "recording" : fi.completeBaseName();
+	return dir.filePath(stem + "." + QString::fromStdString(session_id_) + ".tmp.jsonl").toStdString();
 }
 
-void RecordingSession::flush_journal_entry(const QJsonObject &entry)
+bool RecordingSession::flush_journal_entry(const QJsonObject &entry)
 {
-	if (!cache_stream_) {
-		return;
+	if (!cache_stream_ || !cache_file_) {
+		journal_healthy_ = false;
+		return false;
 	}
 
 	QJsonDocument doc(entry);
 	*cache_stream_ << QString::fromUtf8(doc.toJson(QJsonDocument::Compact)) << "\n";
 	cache_stream_->flush();
+	journal_healthy_ = cache_stream_->status() == QTextStream::Ok && cache_file_->flush();
+	return journal_healthy_;
+}
+
+bool RecordingSession::journal_healthy() const
+{
+	std::lock_guard<std::recursive_mutex> lock(mutex_);
+	return journal_healthy_;
 }
 
 void RecordingSession::cleanup_cache_file(bool force)
@@ -176,7 +212,7 @@ MemoMarker RecordingSession::add_marker(uint64_t ms, int type_index, const std::
 }
 
 bool RecordingSession::update_marker(uint32_t marker_id, const std::string &label, const std::string &color,
-				     const std::string &comment)
+				     const std::string &comment, int type_index)
 {
 	std::lock_guard<std::recursive_mutex> lock(mutex_);
 	for (auto &m : markers_) {
@@ -184,6 +220,8 @@ bool RecordingSession::update_marker(uint32_t marker_id, const std::string &labe
 			m.label = label;
 			m.color = color;
 			m.comment = comment;
+			if (type_index >= 0 && type_index < 4)
+				m.type_index = type_index;
 
 			QJsonObject op;
 			op["op"] = "update";
@@ -191,6 +229,7 @@ bool RecordingSession::update_marker(uint32_t marker_id, const std::string &labe
 			op["label"] = QString::fromStdString(label);
 			op["color"] = QString::fromStdString(color);
 			op["comment"] = QString::fromStdString(comment);
+			op["type_index"] = m.type_index;
 			flush_journal_entry(op);
 
 			return true;
@@ -221,7 +260,6 @@ void RecordingSession::clear_markers()
 {
 	std::lock_guard<std::recursive_mutex> lock(mutex_);
 	markers_.clear();
-	next_marker_id_ = 1;
 
 	QJsonObject op;
 	op["op"] = "clear";
@@ -243,49 +281,15 @@ std::string RecordingSession::video_path() const
 void RecordingSession::set_video_path(const std::string &path)
 {
 	std::lock_guard<std::recursive_mutex> lock(mutex_);
-	if (path.empty() || path == video_path_) {
+	if (path.empty() || path == video_path_)
 		return;
-	}
 
 	video_path_ = path;
-
-	if (!cache_file_ || !cache_file_->isOpen()) {
-		cache_file_path_ = get_cache_file_path();
-		if (!cache_file_path_.empty()) {
-			QFileInfo cfi(QString::fromStdString(cache_file_path_));
-			cfi.dir().mkpath(".");
-
-			auto file = std::make_unique<QFile>(QString::fromStdString(cache_file_path_));
-			if (file->open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
-				cache_file_ = std::move(file);
-				cache_stream_ = std::make_unique<QTextStream>(cache_file_.get());
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-				cache_stream_->setCodec("UTF-8");
-#endif
-				QJsonObject header;
-				header["op"] = "header";
-				header["session_id"] = QString::fromStdString(session_id_);
-				header["video_path"] = QString::fromStdString(video_path_);
-				header["started_at"] = QString::fromStdString(started_at_);
-				header["fps_num"] = static_cast<qint64>(fps_.num);
-				header["fps_den"] = static_cast<qint64>(fps_.den);
-				header["width"] = static_cast<qint64>(width_);
-				header["height"] = static_cast<qint64>(height_);
-
-				QJsonDocument doc(header);
-				*cache_stream_ << QString::fromUtf8(doc.toJson(QJsonDocument::Compact)) << "\n";
-
-				for (const auto &m : markers_) {
-					QJsonObject op;
-					op["op"] = "add";
-					op["marker"] = m.to_json();
-					QJsonDocument mdoc(op);
-					*cache_stream_ << QString::fromUtf8(mdoc.toJson(QJsonDocument::Compact))
-						       << "\n";
-				}
-				cache_stream_->flush();
-			}
-		}
+	if (active_) {
+		QJsonObject op;
+		op["op"] = "video_path";
+		op["video_path"] = QString::fromStdString(path);
+		flush_journal_entry(op);
 	}
 }
 
@@ -361,6 +365,8 @@ bool RecordingSession::save_to_json(const std::string &target_json_path)
 	std::lock_guard<std::recursive_mutex> lock(mutex_);
 
 	std::string path = target_json_path;
+	if (path.empty())
+		path = source_json_path_;
 	if (path.empty()) {
 		if (video_path_.empty()) {
 			return false;
@@ -386,7 +392,13 @@ bool RecordingSession::save_to_json(const std::string &target_json_path)
 		return false;
 	}
 
-	return file.commit();
+	if (!file.commit())
+		return false;
+	if (!active_) {
+		source_json_path_ = path;
+		cleanup_cache_file(true);
+	}
+	return true;
 }
 
 bool RecordingSession::load_from_json(const std::string &json_path)
@@ -412,6 +424,17 @@ bool RecordingSession::load_from_json(const std::string &json_path)
 	}
 
 	QJsonObject root = doc.object();
+	if (!root["session_id"].isString() || root["session_id"].toString().isEmpty() ||
+	    !root["video_info"].isObject() || !root["markers"].isArray())
+		return false;
+	for (const auto &value : root["markers"].toArray()) {
+		if (!value.isObject())
+			return false;
+	}
+	cache_stream_.reset();
+	cache_file_.reset();
+	cache_file_path_.clear();
+	source_json_path_ = json_path;
 	session_id_ = root["session_id"].toString().toStdString();
 	video_path_ = root["video_file_path"].toString().toStdString();
 	started_at_ = root["started_at_utc"].toString().toStdString();
@@ -427,8 +450,10 @@ bool RecordingSession::load_from_json(const std::string &json_path)
 		qint64 w = vinfo["width"].toInteger(1920);
 		qint64 h = vinfo["height"].toInteger(1080);
 
-		fps_.num = (num > 0 && num <= 1000) ? static_cast<uint32_t>(num) : 60;
-		fps_.den = (den > 0 && den <= 1000) ? static_cast<uint32_t>(den) : 1;
+		if (num > 0 && num <= 1000000 && den > 0 && den <= 1000000 &&
+		    static_cast<double>(num) / static_cast<double>(den) >= 1.0 &&
+		    static_cast<double>(num) / static_cast<double>(den) <= 1000.0)
+			fps_ = VideoFrameRate{static_cast<uint32_t>(num), static_cast<uint32_t>(den)};
 		width_ = (w > 0 && w <= 32768) ? static_cast<uint32_t>(w) : 1920;
 		height_ = (h > 0 && h <= 32768) ? static_cast<uint32_t>(h) : 1080;
 	}
@@ -446,6 +471,8 @@ bool RecordingSession::load_from_json(const std::string &json_path)
 					m.id = max_id + 1;
 				}
 				seen_ids.insert(m.id);
+				m.timecode_ndf = TimecodeHelper::frame_index_to_smpte(m.frame_index, fps_, true);
+				m.timecode_df = TimecodeHelper::frame_index_to_smpte(m.frame_index, fps_);
 				markers_.push_back(m);
 				if (m.id > max_id) {
 					max_id = m.id;
@@ -467,33 +494,48 @@ bool RecordingSession::recover_from_cache(const std::string &cache_path, Recordi
 	}
 
 	RecordingSession temp;
+	bool has_header = false;
+	std::unordered_set<uint32_t> seen_ids;
 	temp.fps_ = VideoFrameRate{60, 1};
 	temp.width_ = 1920;
 	temp.height_ = 1080;
 
 	while (!file.atEnd()) {
-		QByteArray line = file.readLine().trimmed();
+		QByteArray raw_line = file.readLine();
+		QByteArray line = raw_line.trimmed();
 		if (line.isEmpty())
 			continue;
 
 		QJsonDocument doc = QJsonDocument::fromJson(line);
-		if (!doc.isObject())
-			continue;
+		if (!doc.isObject()) {
+			// A crash can leave only the final append incomplete. Corruption
+			// in a completed record must not silently change the recovered state.
+			if (file.atEnd() && !raw_line.endsWith('\n'))
+				break;
+			return false;
+		}
 
 		QJsonObject obj = doc.object();
 		QString op = obj["op"].toString();
 		if (op.isEmpty()) {
 			op = obj["type"].toString();
 		}
+		if (!has_header && op != "header")
+			return false;
 
 		if (op == "header") {
+			if (has_header)
+				return false;
+			has_header = true;
 			temp.session_id_ = obj["session_id"].toString().toStdString();
 			temp.video_path_ = obj["video_path"].toString().toStdString();
 			temp.started_at_ = obj["started_at"].toString().toStdString();
 			qint64 num = obj["fps_num"].toInteger(60);
 			qint64 den = obj["fps_den"].toInteger(1);
-			temp.fps_.num = (num > 0 && num <= 1000) ? static_cast<uint32_t>(num) : 60;
-			temp.fps_.den = (den > 0 && den <= 1000) ? static_cast<uint32_t>(den) : 1;
+			if (num > 0 && num <= 1000000 && den > 0 && den <= 1000000 &&
+			    static_cast<double>(num) / static_cast<double>(den) >= 1.0 &&
+			    static_cast<double>(num) / static_cast<double>(den) <= 1000.0)
+				temp.fps_ = VideoFrameRate{static_cast<uint32_t>(num), static_cast<uint32_t>(den)};
 			qint64 w = obj["width"].toInteger(1920);
 			qint64 h = obj["height"].toInteger(1080);
 			temp.width_ = (w > 0 && w <= 32768) ? static_cast<uint32_t>(w) : 1920;
@@ -501,6 +543,8 @@ bool RecordingSession::recover_from_cache(const std::string &cache_path, Recordi
 		} else if (op == "add" || op == "marker") {
 			QJsonObject mobj = obj.contains("marker") ? obj["marker"].toObject() : obj;
 			MemoMarker m = MemoMarker::from_json(mobj);
+			if (m.id == 0 || !seen_ids.insert(m.id).second)
+				return false;
 			temp.markers_.push_back(m);
 			if (m.id >= temp.next_marker_id_) {
 				temp.next_marker_id_ = m.id + 1;
@@ -515,6 +559,8 @@ bool RecordingSession::recover_from_cache(const std::string &cache_path, Recordi
 					m.label = ulabel;
 					m.color = ucolor;
 					m.comment = ucomment;
+					if (obj.contains("type_index"))
+						m.type_index = qBound(0, obj["type_index"].toInt(), 3);
 					break;
 				}
 			}
@@ -523,22 +569,34 @@ bool RecordingSession::recover_from_cache(const std::string &cache_path, Recordi
 			for (auto it = temp.markers_.begin(); it != temp.markers_.end(); ++it) {
 				if (it->id == did) {
 					temp.markers_.erase(it);
+					seen_ids.erase(did);
 					break;
 				}
 			}
 		} else if (op == "clear") {
 			temp.markers_.clear();
+			seen_ids.clear();
 			temp.next_marker_id_ = 1;
+		} else if (op == "video_path") {
+			temp.video_path_ = obj["video_path"].toString().toStdString();
 		}
 	}
 
 	file.close();
+	if (file.error() != QFileDevice::NoError)
+		return false;
 
-	if (temp.markers_.empty() && temp.video_path_.empty()) {
+	if (!has_header || temp.session_id_.empty()) {
 		return false;
 	}
 
 	std::lock_guard<std::recursive_mutex> lock(out_session.mutex_);
+	if (out_session.active_)
+		return false;
+	out_session.cache_stream_.reset();
+	out_session.cache_file_.reset();
+	out_session.cache_file_path_ = cache_path;
+	out_session.source_json_path_.clear();
 	out_session.session_id_ = temp.session_id_;
 	out_session.video_path_ = temp.video_path_;
 	out_session.started_at_ = temp.started_at_;
@@ -546,6 +604,10 @@ bool RecordingSession::recover_from_cache(const std::string &cache_path, Recordi
 	out_session.width_ = temp.width_;
 	out_session.height_ = temp.height_;
 	out_session.markers_ = temp.markers_;
+	for (auto &marker : out_session.markers_) {
+		marker.timecode_ndf = TimecodeHelper::frame_index_to_smpte(marker.frame_index, temp.fps_, true);
+		marker.timecode_df = TimecodeHelper::frame_index_to_smpte(marker.frame_index, temp.fps_);
+	}
 	out_session.next_marker_id_ = temp.next_marker_id_;
 	out_session.active_ = false;
 

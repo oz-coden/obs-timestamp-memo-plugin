@@ -8,6 +8,8 @@ class StatusNotifier : public QObject {
 
 public:
 	static StatusNotifier &instance();
+	void initialize();
+	void shutdown();
 
 	void notify(const std::string &message, int timeout_ms = 3000);
 
@@ -16,4 +18,5 @@ signals:
 
 private:
 	StatusNotifier();
+	bool enabled_ = false;
 };

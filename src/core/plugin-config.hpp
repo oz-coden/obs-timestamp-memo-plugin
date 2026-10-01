@@ -23,7 +23,7 @@ public:
 	static PluginConfig &instance();
 
 	void load();
-	void save();
+	bool save();
 
 	std::vector<MarkerTypeConfig> marker_types;
 	AutoExportConfig auto_export;

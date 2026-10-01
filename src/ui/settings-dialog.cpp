@@ -194,7 +194,11 @@ void SettingsDialog::onSaveClicked()
 
 	cfg.show_status_bar_notification = chk_status_bar_->isChecked();
 
-	cfg.save();
+	if (!cfg.save()) {
+		QMessageBox::warning(this, "Settings Error",
+				     "Settings changed for this session, but could not be saved to disk.");
+		return;
+	}
 
 	emit settingsSaved();
 	accept();
