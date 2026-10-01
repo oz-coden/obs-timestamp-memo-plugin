@@ -72,13 +72,12 @@ bool ObsBridge::is_paused() const
 
 uint64_t ObsBridge::get_current_record_frames() const
 {
-	obs_output_t *output = obs_frontend_get_recording_output();
+	auto *output = recording_output_;
 	if (!output) {
 		return 0;
 	}
 
 	int total_frames = obs_output_get_total_frames(output);
-	obs_output_release(output);
 
 	return total_frames > 0 ? static_cast<uint64_t>(total_frames) : 0;
 }
@@ -88,7 +87,7 @@ std::string ObsBridge::get_current_record_file_path() const
 	if (!recording_path_.empty())
 		return recording_path_;
 	std::string file_path = "";
-	obs_output_t *output = obs_frontend_get_recording_output();
+	auto *output = recording_output_;
 	if (output) {
 		obs_data_t *settings = obs_output_get_settings(output);
 		if (settings) {
@@ -104,7 +103,6 @@ std::string ObsBridge::get_current_record_file_path() const
 			}
 			obs_data_release(settings);
 		}
-		obs_output_release(output);
 	}
 	return file_path;
 }
@@ -113,8 +111,10 @@ void ObsBridge::attach_recording_output()
 {
 	detach_recording_output();
 	recording_path_.clear();
-	recording_path_ = get_current_record_file_path();
+	// OBS has not constructed outputHandler during module loading. Acquire an
+	// output only after recording becomes active, then retain it through STOPPED.
 	recording_output_ = obs_frontend_get_recording_output();
+	recording_path_ = get_current_record_file_path();
 	if (recording_output_)
 		signal_handler_connect(obs_output_get_signal_handler(recording_output_), "file_changed",
 				       on_file_changed, this);
@@ -158,7 +158,7 @@ VideoFrameRate ObsBridge::get_current_frame_rate() const
 	VideoFrameRate rate{60, 1};
 	if (obs_get_video_info(&ovi) && ovi.fps_num && ovi.fps_den)
 		rate = VideoFrameRate{ovi.fps_num, ovi.fps_den};
-	obs_output_t *output = obs_frontend_get_recording_output();
+	auto *output = recording_output_;
 	if (output) {
 		obs_encoder_t *encoder = obs_output_get_video_encoder(output);
 		uint32_t divisor = encoder ? obs_encoder_get_frame_rate_divisor(encoder) : 1;
@@ -170,7 +170,6 @@ VideoFrameRate ObsBridge::get_current_frame_rate() const
 				rate.den *= divisor;
 			}
 		}
-		obs_output_release(output);
 	}
 	return rate;
 }
@@ -185,14 +184,13 @@ void ObsBridge::get_video_dimension(uint32_t &width, uint32_t &height) const
 		width = 1920;
 		height = 1080;
 	}
-	obs_output_t *output = obs_frontend_get_recording_output();
+	auto *output = recording_output_;
 	if (output) {
 		obs_encoder_t *encoder = obs_output_get_video_encoder(output);
 		if (encoder && obs_encoder_get_width(encoder) && obs_encoder_get_height(encoder)) {
 			width = obs_encoder_get_width(encoder);
 			height = obs_encoder_get_height(encoder);
 		}
-		obs_output_release(output);
 	}
 }
 
@@ -295,8 +293,12 @@ std::string ObsBridge::recovery_cache_directory() const
 RecordingSnapshot ObsBridge::snapshot() const
 {
 	RecordingSnapshot value;
+	if (!initialized_)
+		return value;
 	value.recording = is_recording();
 	value.paused = value.recording && is_paused();
+	if (!recording_output_)
+		return value;
 	value.total_frames = get_current_record_frames();
 	value.path = get_current_record_file_path();
 	value.fps = get_current_frame_rate();

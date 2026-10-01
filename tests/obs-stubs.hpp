@@ -18,6 +18,7 @@ void reject_dock(bool reject);
 int callbacks();
 int save_callbacks();
 int output_refs();
+int recording_output_queries();
 int file_callbacks();
 int hotkeys();
 QDockWidget *dock();

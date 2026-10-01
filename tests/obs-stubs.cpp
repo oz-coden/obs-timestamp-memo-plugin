@@ -28,6 +28,8 @@ namespace {
 obs_output_t output;
 obs_encoder_t encoder;
 bool recording = false, paused = false, exited = false, reject = false;
+bool output_ready = false;
+int output_queries = 0;
 int refs = 0, invalid_calls = 0;
 QMainWindow *main_window = nullptr;
 QDockWidget *outer_dock = nullptr;
@@ -171,6 +173,13 @@ bool obs_frontend_recording_paused()
 obs_output_t *obs_frontend_get_recording_output()
 {
 	frontend_call();
+	++output_queries;
+	// OBS dereferences outputHandler before returning an output. During module
+	// loading that handler does not exist, so even a caller's null check is too late.
+	if (!output_ready) {
+		++invalid_calls;
+		return nullptr;
+	}
 	++refs;
 	return &output;
 }
@@ -203,10 +212,13 @@ void reset(QMainWindow *window, const QString &dir)
 	main_window = window;
 	cache_dir = dir;
 	recording = paused = exited = reject = false;
+	output_ready = false;
+	output_queries = 0;
 	invalid_calls = 0;
 }
 void start(const QString &path, int frames)
 {
+	output_ready = true;
 	output.settings.path = path.toStdString();
 	output.frames = frames;
 	recording = true;
@@ -271,6 +283,10 @@ int save_callbacks()
 int output_refs()
 {
 	return refs;
+}
+int recording_output_queries()
+{
+	return output_queries;
 }
 int file_callbacks()
 {

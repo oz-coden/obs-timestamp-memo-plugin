@@ -259,6 +259,8 @@ static void lifecycle_and_ui(const QString &dir, QMainWindow &window)
 	FakeObs::reset(&window, dir + "/fallback");
 	CHECK(obs_module_load());
 	CHECK(obs_module_load());
+	CHECK(FakeObs::recording_output_queries() == 0);
+	CHECK(FakeObs::invalid_frontend_calls() == 0);
 	CHECK(FakeObs::callbacks() == 2 && FakeObs::save_callbacks() == 1 && FakeObs::hotkeys() == 5);
 	CHECK(FakeObs::dock());
 	CHECK(!qobject_cast<QDockWidget *>(FakeObs::dock()->widget()));
@@ -270,6 +272,7 @@ static void lifecycle_and_ui(const QString &dir, QMainWindow &window)
 	drain();
 	auto &controller = qobject_cast<DockWidget *>(FakeObs::dock()->widget())->controller();
 	CHECK(!controller.trigger_quick_marker(0));
+	CHECK(FakeObs::recording_output_queries() == 0);
 	FakeObs::set_rate(60000, 1001);
 	FakeObs::start(dir + "/segment1.mkv", 600);
 	CHECK(controller.trigger_quick_marker(0));
@@ -321,6 +324,9 @@ static void lifecycle_and_ui(const QString &dir, QMainWindow &window)
 	CHECK(QApplication::clipboard()->text() == "00:00:01;00");
 	FakeObs::stop();
 	CHECK(FakeObs::output_refs() == 0 && FakeObs::file_callbacks() == 0);
+	const auto queries_after_stop = FakeObs::recording_output_queries();
+	CHECK(!controller.trigger_quick_marker(0));
+	CHECK(FakeObs::recording_output_queries() == queries_after_stop);
 	FakeObs::start(dir + "/pending1.mkv");
 	CHECK(controller.trigger_quick_marker(0));
 	FakeObs::split(dir + "/pending2.mkv", 600);
@@ -356,6 +362,21 @@ static void lifecycle_and_ui(const QString &dir, QMainWindow &window)
 	FakeObs::reject_dock(true);
 	CHECK(!obs_module_load());
 	CHECK(FakeObs::callbacks() == 0 && FakeObs::save_callbacks() == 0 && FakeObs::hotkeys() == 0);
+	CHECK(FakeObs::recording_output_queries() == 0 && FakeObs::invalid_frontend_calls() == 0);
+	FakeObs::reject_dock(false);
+	// A late load during recording must still attach, stamp and flush on unload.
+	FakeObs::start(dir + "/already-recording.mkv", 30);
+	CHECK(obs_module_load());
+	auto &late = qobject_cast<DockWidget *>(FakeObs::dock()->widget())->controller();
+	CHECK(late.is_recording());
+	CHECK(late.trigger_quick_marker(0));
+	CHECK(late.session().get_markers().at(0).timestamp_ms == 1001);
+	CHECK(FakeObs::recording_output_queries() == 1 && FakeObs::output_refs() == 1);
+	obs_module_unload();
+	CHECK(FakeObs::output_refs() == 0 && FakeObs::file_callbacks() == 0);
+	CHECK(FakeObs::callbacks() == 0 && FakeObs::hotkeys() == 0);
+	CHECK(FakeObs::invalid_frontend_calls() == 0);
+	CHECK(QFile::exists(dir + "/already-recording.json"));
 	std::cout << "PASS UI hierarchy, context menu mutation, paused markers, split, reload, EXIT and dock failure\n";
 }
 
