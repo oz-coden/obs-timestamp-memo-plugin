@@ -42,7 +42,7 @@ This plugin was developed to bridge OBS Studio and video editing software (NLEs)
   - **Premiere Pro XML (`.xml`)**: Sequence markers for Adobe Premiere Pro and Final Cut Pro 7 XML workflows.
   - **Plugin JSON (`.json`)**: Complete session archive preserving all metadata and marker history.
 - **Crash Resilience & Auto-Split Support**  
-  - **Real-time Journaling**: Flushes every marker to `.tmp.jsonl` immediately upon stamping, preventing data loss on unexpected power cuts or crashes.
+  - **Real-time Journaling**: Flushes each change to a uniquely named `.tmp.jsonl` cache for crash recovery. Write failures are reported; flushing does not guarantee persistence through a power loss.
   - **OBS File Split Integration**: Seamlessly saves the finished segment and starts a fresh session when OBS auto-splits recordings.
 - **Session History & Reloading**  
   Load and review past session JSON files or recover interrupted crash caches directly from the dock UI.
@@ -139,7 +139,7 @@ Developed by oz-coden. Built on OBS Studio API and Qt 6.
   - **Premiere Pro XML (`.xml`)**: Adobe Premiere Pro や Final Cut Pro 7 形式のシーケンスマーカー。
   - **プラグイン専用 JSON (`.json`)**: すべてのセッションメタデータとマーカーを保持する保存形式。
 - **耐障害性（クラッシュ対策）& 自動分割連携**  
-  - **リアルタイムジャーナリング**: 打刻のたびに 1 行ずつテンポラリ JSON (`.tmp.jsonl`) に即座に追記フラッシュし、不意のクラッシュや停電によるデータ消失を防止。
+  - **リアルタイムジャーナリング**: 各変更を固有名のテンポラリ JSON (`.tmp.jsonl`) に追記フラッシュし、クラッシュ復旧に利用します。書込失敗は通知しますが、停電時の永続化を保証するものではありません。
   - **録画ファイル自動分割（Split Recording）連携**: OBS のファイル自動分割を検知し、分割ごとに前ファイルを確定保存して新ファイル用セッションを自動生成。
 - **セッション履歴の読み込み・再編集**  
   過去の録画 JSON ファイルや中断されたクラッシュキャッシュをドックUIから開き、メモの追記・修正や別形式への再エクスポートが可能。
@@ -191,3 +191,26 @@ Developed by oz-coden. Built on OBS Studio API and Qt 6.
 ## クレジット
 
 Developed by oz-coden. Built on OBS Studio API and Qt 6.
+
+## Build and validation / ビルドと検証
+
+Requires CMake 3.28+, C++20, OBS frontend API and Qt6 Widgets. The pinned
+dependencies are declared in buildspec.json. Presets download/build OBS and Qt
+dependencies; use Visual Studio 2022 with the Windows SDK specified by the preset.
+
+    cmake --preset windows-x64
+    cmake --build --preset windows-x64 --config RelWithDebInfo --parallel
+
+macOS/Linux use the macos/ubuntu-x86_64 presets in CMakePresets.json. If the local
+windows-local preset and build-local.ps1 exist, they select the installed SDK
+instead; those are local helpers, not tracked repository requirements.
+
+回帰テストはOBS本体を起動せずに実行できます。[テスト手順](tests/README.md)、
+[修正前レビュー](docs/review-before-fixes.md)、
+[修正・検証結果](docs/review-and-validation.md)、
+[OBS実機確認手順](docs/obs-manual-test.md)を参照してください。
+
+自動JSON保存をOFFにすると、停止後も復旧用JSONLを保持します。cacheは通常動画の隣に、
+録画パス未確定時はOBSプラグイン設定領域のcacheサブディレクトリに保存します。
+履歴JSONの編集は読み込んだファイルへ保存します。設定とドック配置は再起動時に復元されますが、
+最後のセッションはOpen/Recoverで明示的に読み込んでください。

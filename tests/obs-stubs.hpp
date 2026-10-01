@@ -1,0 +1,25 @@
+#pragma once
+#include <QString>
+#include <QMainWindow>
+#include <QDockWidget>
+#include "obs-frontend-api.h"
+namespace FakeObs {
+void reset(QMainWindow *window, const QString &cache_dir);
+void start(const QString &path, int frames = 0);
+void stop();
+void split(const QString &path, int frames);
+void set_frames(int frames);
+void set_paused(bool paused);
+void set_rate(uint32_t num, uint32_t den);
+void set_encoder(uint32_t divisor, uint32_t width, uint32_t height);
+void hotkey(int index);
+void exit();
+void reject_dock(bool reject);
+int callbacks();
+int save_callbacks();
+int output_refs();
+int file_callbacks();
+int hotkeys();
+QDockWidget *dock();
+int invalid_frontend_calls();
+} // namespace FakeObs
