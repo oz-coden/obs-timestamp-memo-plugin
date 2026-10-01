@@ -1,4 +1,6 @@
 #include "obs-stubs.hpp"
+#include "dock-widget.hpp"
+#include "settings-dialog.hpp"
 #include "recording-session.hpp"
 #include "session-store.hpp"
 #include "session-codec.hpp"
@@ -199,7 +201,8 @@ static void exports(const QString &dir)
 	CHECK(session_store.finish(session, true));
 	session.clear_markers();
 	CHECK(snapshot.get_markers().size() == 3);
-	auto registry = ExporterRegistry::instance().get_all();
+	ExporterRegistry catalogue;
+	auto registry = catalogue.get_all();
 	CHECK(registry.size() == 8);
 	for (const auto &exporter : registry) {
 		QString path = dir + "/書出し." + QString::fromStdString(exporter->get_file_extension());
@@ -222,16 +225,13 @@ static void exports(const QString &dir)
 	CHECK(vtt.find("<tag>") == std::string::npos);
 	QPointer<QLayout> layout_guard;
 	{
-		ExportDialog dialog(snapshot);
+		ExportDialog dialog(snapshot, catalogue);
 		layout_guard = dialog.findChild<QGroupBox *>()->layout();
 		snapshot.clear_markers();
 		dialog.findChild<QButtonGroup *>()->button(5)->setChecked(true);
-		QTimer::singleShot(0, []() {
-			if (auto *modal = QApplication::activeModalWidget())
-				modal->close();
-		});
 		CHECK(QMetaObject::invokeMethod(&dialog, "onCopyClicked", Qt::DirectConnection));
 		CHECK(QApplication::clipboard()->text().contains("same second"));
+		CHECK(QApplication::activeModalWidget() == nullptr);
 	}
 	CHECK(layout_guard.isNull());
 	std::cout << "PASS all 8 exporters, snapshot, BOM, ordering and escaped VTT\n";
@@ -242,7 +242,10 @@ static void model_reentrancy()
 	MarkerTableModel model;
 	model.add_marker(MemoMarker::create(1, 0, {60, 1}, 0, "old", "", "", false), {60, 1});
 	uint32_t emitted_id = 0;
-	QObject::connect(&model, &QAbstractItemModel::dataChanged, &model, [&model]() { model.clear(); });
+	CHECK(model.setData(model.index(0, MarkerTableModel::Col_Label), "unapplied"));
+	CHECK(model.data(model.index(0, MarkerTableModel::Col_Label)).toString() == "old");
+	QObject::connect(&model, &MarkerTableModel::markerDataChanged, &model,
+			 [&model](uint32_t, const QString &, const QString &) { model.clear(); });
 	QObject::connect(&model, &MarkerTableModel::markerDataChanged, &model,
 			 [&emitted_id](uint32_t id, const QString &, const QString &) { emitted_id = id; });
 	CHECK(model.setData(model.index(0, MarkerTableModel::Col_Label), "new"));
@@ -265,12 +268,15 @@ static void lifecycle_and_ui(const QString &dir, QMainWindow &window)
 	FakeObs::dock()->show();
 	window.show();
 	drain();
-	auto &controller = SessionController::instance();
+	auto &controller = qobject_cast<DockWidget *>(FakeObs::dock()->widget())->controller();
 	CHECK(!controller.trigger_quick_marker(0));
 	FakeObs::set_rate(60000, 1001);
 	FakeObs::start(dir + "/segment1.mkv", 600);
 	CHECK(controller.trigger_quick_marker(0));
 	CHECK(table->model()->rowCount() == 1);
+	CHECK(table->model()->setData(table->model()->index(0, MarkerTableModel::Col_Comment), "UI edit"));
+	CHECK(controller.session().get_markers().front().comment == "UI edit");
+	CHECK(table->model()->data(table->model()->index(0, MarkerTableModel::Col_Comment)).toString() == "UI edit");
 	uint32_t id = controller.session().get_markers().at(0).id;
 	CHECK(controller.update_marker_type(id, 3));
 	CHECK(controller.session().get_markers().at(0).type_index == 3);
@@ -288,6 +294,15 @@ static void lifecycle_and_ui(const QString &dir, QMainWindow &window)
 	CHECK(controller.trigger_quick_marker(0));
 	CHECK(controller.session().get_markers().at(0).timestamp_ms == 1001);
 	CHECK(read_file(dir + "/segment1.json").contains("Cut / Edit"));
+	auto *content = qobject_cast<DockWidget *>(FakeObs::dock()->widget());
+	CHECK(QMetaObject::invokeMethod(content, "onExportClicked", Qt::DirectConnection));
+	CHECK(QMetaObject::invokeMethod(content, "onExportClicked", Qt::DirectConnection));
+	CHECK(content->findChildren<ExportDialog *>().size() == 1);
+	CHECK(content->findChild<ExportDialog *>()->windowModality() == Qt::NonModal);
+	CHECK(QMetaObject::invokeMethod(content, "onSettingsClicked", Qt::DirectConnection));
+	CHECK(QMetaObject::invokeMethod(content, "onSettingsClicked", Qt::DirectConnection));
+	CHECK(content->findChildren<SettingsDialog *>().size() == 1);
+	CHECK(QApplication::activeModalWidget() == nullptr);
 	CHECK(FakeObs::output_refs() == 1 && FakeObs::file_callbacks() == 1);
 
 	QTimer::singleShot(0, [&controller]() {
@@ -312,20 +327,23 @@ static void lifecycle_and_ui(const QString &dir, QMainWindow &window)
 	FakeObs::stop();
 	CHECK(controller.session().video_path() == (dir + "/pending2.mkv").toStdString());
 	CHECK(QFile::exists(dir + "/pending1.json") && QFile::exists(dir + "/pending2.json"));
+	QPointer<DockWidget> removed_content = qobject_cast<DockWidget *>(FakeObs::dock()->widget());
 	obs_module_unload();
+	CHECK(removed_content.isNull());
 	CHECK(FakeObs::callbacks() == 0 && FakeObs::hotkeys() == 0);
 	CHECK(obs_module_load());
+	auto &reloaded = qobject_cast<DockWidget *>(FakeObs::dock()->widget())->controller();
 	FakeObs::start(dir + "/reload.mkv");
 	FakeObs::hotkey(0);
-	CHECK(controller.session().get_markers().size() == 1);
+	CHECK(reloaded.session().get_markers().size() == 1);
 	CHECK(FakeObs::dock()->findChild<QTableView *>()->model()->rowCount() == 1);
 	FakeObs::stop();
 	FakeObs::set_encoder(2, 1280, 720);
 	FakeObs::start(dir + "/divisor.mkv", 30);
-	CHECK(controller.trigger_quick_marker(0));
-	CHECK(controller.session().frame_rate().num == 30000 && controller.session().frame_rate().den == 1001);
-	CHECK(controller.session().get_markers().at(0).timestamp_ms == 1001);
-	CHECK(controller.session().width() == 1280 && controller.session().height() == 720);
+	CHECK(reloaded.trigger_quick_marker(0));
+	CHECK(reloaded.session().frame_rate().num == 30000 && reloaded.session().frame_rate().den == 1001);
+	CHECK(reloaded.session().get_markers().at(0).timestamp_ms == 1001);
+	CHECK(reloaded.session().width() == 1280 && reloaded.session().height() == 720);
 	FakeObs::exit();
 	drain();
 	obs_module_unload();

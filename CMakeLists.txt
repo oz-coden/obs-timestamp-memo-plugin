@@ -31,6 +31,7 @@ target_include_directories(
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
           ${CMAKE_CURRENT_SOURCE_DIR}/src/core
           ${CMAKE_CURRENT_SOURCE_DIR}/src/persistence
+          ${CMAKE_CURRENT_SOURCE_DIR}/src/application
           ${CMAKE_CURRENT_SOURCE_DIR}/src/exporters
           ${CMAKE_CURRENT_SOURCE_DIR}/src/obs
           ${CMAKE_CURRENT_SOURCE_DIR}/src/ui
@@ -65,7 +66,11 @@ endif()
 
 target_sources(
   ${CMAKE_PROJECT_NAME}
-  PRIVATE src/core/recording-timeline.hpp
+  PRIVATE src/application/plugin-runtime.hpp
+          src/application/plugin-runtime.cpp
+          src/application/recording-gateway.hpp
+          src/core/plugin-settings.hpp
+          src/core/recording-timeline.hpp
           src/persistence/session-codec.hpp
           src/persistence/session-codec.cpp
           src/persistence/session-store.hpp
@@ -78,12 +83,12 @@ target_sources(
           src/core/timecode-helper.cpp
           src/core/memo-marker.hpp
           src/core/memo-marker.cpp
-          src/core/plugin-config.hpp
-          src/core/plugin-config.cpp
+          src/persistence/plugin-config.hpp
+          src/persistence/plugin-config.cpp
           src/core/recording-session.hpp
           src/core/recording-session.cpp
-          src/core/session-controller.hpp
-          src/core/session-controller.cpp
+          src/application/session-controller.hpp
+          src/application/session-controller.cpp
           src/exporters/exporter-base.hpp
           src/exporters/exporter-registry.hpp
           src/exporters/exporter-registry.cpp

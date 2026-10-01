@@ -7,7 +7,7 @@
 
 class ExporterRegistry {
 public:
-	static ExporterRegistry &instance();
+	ExporterRegistry();
 
 	void register_exporter(std::shared_ptr<IExporter> exporter);
 	std::vector<std::shared_ptr<IExporter>> get_all() const;
@@ -17,7 +17,6 @@ public:
 	bool export_by_id(const std::string &id, const RecordingSession &session, const std::string &output_path) const;
 
 private:
-	ExporterRegistry();
 	void register_defaults();
 
 	std::vector<std::shared_ptr<IExporter>> exporters_;

@@ -13,13 +13,16 @@
 #include <QPushButton>
 #include <QRadioButton>
 #include <QVBoxLayout>
+#include <QPointer>
 
-ExportDialog::ExportDialog(const RecordingSession &session, QWidget *parent) : QDialog(parent), session_(session)
+ExportDialog::ExportDialog(const RecordingSession &session, const ExporterRegistry &exporters, QWidget *parent)
+	: QDialog(parent),
+	  session_(session)
 {
-	setWindowTitle("Export Markers");
+	setWindowTitle("Export Markers — " + QFileInfo(QString::fromStdString(session.video_path())).fileName());
 	setMinimumWidth(380);
 
-	exporters_ = ExporterRegistry::instance().get_all();
+	exporters_ = exporters.get_all();
 	setup_ui();
 }
 
@@ -98,14 +101,16 @@ void ExportDialog::onCopyClicked()
 	}
 
 	std::string text = exporter->export_to_string(session_);
+	if (!QGuiApplication::clipboard()) {
+		QMessageBox::critical(this, "Copy Failed", "The system clipboard is unavailable.");
+		return;
+	}
 	QGuiApplication::clipboard()->setText(QString::fromStdString(text));
-	QMessageBox::information(this, "Copied",
-				 QString("Successfully copied %1 to clipboard!")
-					 .arg(QString::fromStdString(exporter->get_format_name())));
 }
 
 void ExportDialog::onExportClicked()
 {
+	QPointer<ExportDialog> guard(this);
 	int selected_id = btn_group_->checkedId();
 	if (selected_id < 0 || selected_id >= static_cast<int>(exporters_.size())) {
 		return;
@@ -122,13 +127,11 @@ void ExportDialog::onExportClicked()
 	}
 
 	QString save_path = QFileDialog::getSaveFileName(this, "Save Export File", default_name, filter);
-	if (save_path.isEmpty()) {
+	if (!guard || save_path.isEmpty()) {
 		return;
 	}
 
 	if (exporter->export_to_file(session_, save_path.toStdString())) {
-		QMessageBox::information(this, "Export Succeeded",
-					 QString("Successfully exported to:\n%1").arg(save_path));
 		accept();
 	} else {
 		QMessageBox::critical(this, "Export Failed", QString("Failed to write to:\n%1").arg(save_path));

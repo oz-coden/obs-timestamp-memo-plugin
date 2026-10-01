@@ -5,13 +5,12 @@
 #include <limits>
 #include <numeric>
 
-ObsBridge &ObsBridge::instance()
+ObsBridge::ObsBridge()
 {
-	static ObsBridge inst;
-	return inst;
+	hotkey_ids_.fill(OBS_INVALID_HOTKEY_ID);
+	for (int i = 0; i < 5; ++i)
+		hotkey_bindings_[i] = {this, i};
 }
-
-ObsBridge::ObsBridge() {}
 
 ObsBridge::~ObsBridge()
 {
@@ -26,20 +25,15 @@ void ObsBridge::initialize()
 	obs_frontend_add_event_callback(on_frontend_event, this);
 	obs_frontend_add_save_callback(on_save, this);
 
-	hotkey_marker_1_id_ = obs_hotkey_register_frontend("obs_timestamp_memo_marker_1",
-							   "Timestamp Memo: Quick Marker 1", on_hotkey_marker_1, this);
-
-	hotkey_marker_2_id_ = obs_hotkey_register_frontend("obs_timestamp_memo_marker_2",
-							   "Timestamp Memo: Quick Marker 2", on_hotkey_marker_2, this);
-
-	hotkey_marker_3_id_ = obs_hotkey_register_frontend("obs_timestamp_memo_marker_3",
-							   "Timestamp Memo: Quick Marker 3", on_hotkey_marker_3, this);
-
-	hotkey_marker_4_id_ = obs_hotkey_register_frontend("obs_timestamp_memo_marker_4",
-							   "Timestamp Memo: Quick Marker 4", on_hotkey_marker_4, this);
-
-	hotkey_focus_memo_id_ = obs_hotkey_register_frontend(
-		"obs_timestamp_memo_focus_input", "Timestamp Memo: Focus Memo Input", on_hotkey_focus_memo, this);
+	const char *names[] = {"obs_timestamp_memo_marker_1", "obs_timestamp_memo_marker_2",
+			       "obs_timestamp_memo_marker_3", "obs_timestamp_memo_marker_4",
+			       "obs_timestamp_memo_focus_input"};
+	const char *descriptions[] = {"Timestamp Memo: Quick Marker 1", "Timestamp Memo: Quick Marker 2",
+				      "Timestamp Memo: Quick Marker 3", "Timestamp Memo: Quick Marker 4",
+				      "Timestamp Memo: Focus Memo Input"};
+	for (int i = 0; i < 5; ++i)
+		hotkey_ids_[i] =
+			obs_hotkey_register_frontend(names[i], descriptions[i], on_hotkey, &hotkey_bindings_[i]);
 
 	initialized_ = true;
 	if (is_recording())
@@ -59,25 +53,10 @@ void ObsBridge::shutdown()
 	obs_frontend_remove_event_callback(on_frontend_event, this);
 	obs_frontend_remove_save_callback(on_save, this);
 
-	if (hotkey_marker_1_id_ != OBS_INVALID_HOTKEY_ID) {
-		obs_hotkey_unregister(hotkey_marker_1_id_);
-		hotkey_marker_1_id_ = OBS_INVALID_HOTKEY_ID;
-	}
-	if (hotkey_marker_2_id_ != OBS_INVALID_HOTKEY_ID) {
-		obs_hotkey_unregister(hotkey_marker_2_id_);
-		hotkey_marker_2_id_ = OBS_INVALID_HOTKEY_ID;
-	}
-	if (hotkey_marker_3_id_ != OBS_INVALID_HOTKEY_ID) {
-		obs_hotkey_unregister(hotkey_marker_3_id_);
-		hotkey_marker_3_id_ = OBS_INVALID_HOTKEY_ID;
-	}
-	if (hotkey_marker_4_id_ != OBS_INVALID_HOTKEY_ID) {
-		obs_hotkey_unregister(hotkey_marker_4_id_);
-		hotkey_marker_4_id_ = OBS_INVALID_HOTKEY_ID;
-	}
-	if (hotkey_focus_memo_id_ != OBS_INVALID_HOTKEY_ID) {
-		obs_hotkey_unregister(hotkey_focus_memo_id_);
-		hotkey_focus_memo_id_ = OBS_INVALID_HOTKEY_ID;
+	for (auto &id : hotkey_ids_) {
+		if (id != OBS_INVALID_HOTKEY_ID)
+			obs_hotkey_unregister(id);
+		id = OBS_INVALID_HOTKEY_ID;
 	}
 }
 
@@ -89,11 +68,6 @@ bool ObsBridge::is_recording() const
 bool ObsBridge::is_paused() const
 {
 	return obs_frontend_recording_paused();
-}
-
-uint64_t ObsBridge::get_current_record_ms() const
-{
-	return TimecodeHelper::frame_index_to_ms(get_current_record_frames(), get_current_frame_rate());
 }
 
 uint64_t ObsBridge::get_current_record_frames() const
@@ -173,7 +147,7 @@ void ObsBridge::on_file_changed(void *data, calldata_t *params)
 			if (!self->initialized_ || generation != self->output_generation_.load())
 				return;
 			self->recording_path_ = next_path.toStdString();
-			emit self->obsRecordingFileChanged(next_path, frames);
+			emit self->recordingFileChanged(next_path, frames);
 		},
 		Qt::QueuedConnection);
 }
@@ -231,17 +205,17 @@ void ObsBridge::on_frontend_event(enum obs_frontend_event event, void *private_d
 	switch (event) {
 	case OBS_FRONTEND_EVENT_RECORDING_STARTED:
 		self->attach_recording_output();
-		emit self->obsRecordingStarted();
+		emit self->recordingStarted();
 		break;
 	case OBS_FRONTEND_EVENT_RECORDING_PAUSED:
-		emit self->obsRecordingPaused();
+		emit self->recordingPaused();
 		break;
 	case OBS_FRONTEND_EVENT_RECORDING_UNPAUSED:
-		emit self->obsRecordingUnpaused();
+		emit self->recordingUnpaused();
 		break;
 	case OBS_FRONTEND_EVENT_RECORDING_STOPPED:
 		QCoreApplication::sendPostedEvents(self, QEvent::MetaCall);
-		emit self->obsRecordingStopped();
+		emit self->recordingStopped();
 		self->detach_recording_output();
 		break;
 	case OBS_FRONTEND_EVENT_EXIT:
@@ -259,11 +233,11 @@ void ObsBridge::on_save(obs_data_t *save_data, bool saving, void *private_data)
 		return;
 
 	if (saving) {
-		obs_data_array_t *hotkey_arr_1 = obs_hotkey_save(self->hotkey_marker_1_id_);
-		obs_data_array_t *hotkey_arr_2 = obs_hotkey_save(self->hotkey_marker_2_id_);
-		obs_data_array_t *hotkey_arr_3 = obs_hotkey_save(self->hotkey_marker_3_id_);
-		obs_data_array_t *hotkey_arr_4 = obs_hotkey_save(self->hotkey_marker_4_id_);
-		obs_data_array_t *hotkey_arr_focus = obs_hotkey_save(self->hotkey_focus_memo_id_);
+		obs_data_array_t *hotkey_arr_1 = obs_hotkey_save(self->hotkey_ids_[0]);
+		obs_data_array_t *hotkey_arr_2 = obs_hotkey_save(self->hotkey_ids_[1]);
+		obs_data_array_t *hotkey_arr_3 = obs_hotkey_save(self->hotkey_ids_[2]);
+		obs_data_array_t *hotkey_arr_4 = obs_hotkey_save(self->hotkey_ids_[3]);
+		obs_data_array_t *hotkey_arr_focus = obs_hotkey_save(self->hotkey_ids_[4]);
 
 		obs_data_set_array(save_data, "hotkey_marker_1", hotkey_arr_1);
 		obs_data_set_array(save_data, "hotkey_marker_2", hotkey_arr_2);
@@ -283,11 +257,11 @@ void ObsBridge::on_save(obs_data_t *save_data, bool saving, void *private_data)
 		obs_data_array_t *hotkey_arr_4 = obs_data_get_array(save_data, "hotkey_marker_4");
 		obs_data_array_t *hotkey_arr_focus = obs_data_get_array(save_data, "hotkey_focus_memo");
 
-		obs_hotkey_load(self->hotkey_marker_1_id_, hotkey_arr_1);
-		obs_hotkey_load(self->hotkey_marker_2_id_, hotkey_arr_2);
-		obs_hotkey_load(self->hotkey_marker_3_id_, hotkey_arr_3);
-		obs_hotkey_load(self->hotkey_marker_4_id_, hotkey_arr_4);
-		obs_hotkey_load(self->hotkey_focus_memo_id_, hotkey_arr_focus);
+		obs_hotkey_load(self->hotkey_ids_[0], hotkey_arr_1);
+		obs_hotkey_load(self->hotkey_ids_[1], hotkey_arr_2);
+		obs_hotkey_load(self->hotkey_ids_[2], hotkey_arr_3);
+		obs_hotkey_load(self->hotkey_ids_[3], hotkey_arr_4);
+		obs_hotkey_load(self->hotkey_ids_[4], hotkey_arr_focus);
 
 		obs_data_array_release(hotkey_arr_1);
 		obs_data_array_release(hotkey_arr_2);
@@ -297,54 +271,15 @@ void ObsBridge::on_save(obs_data_t *save_data, bool saving, void *private_data)
 	}
 }
 
-void ObsBridge::on_hotkey_marker_1(void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed)
+void ObsBridge::on_hotkey(void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed)
 {
-	if (!pressed)
+	if (!pressed || !data)
 		return;
-	auto *self = static_cast<ObsBridge *>(data);
-	if (self) {
-		emit self->obsTriggerMarker1();
-	}
-}
-
-void ObsBridge::on_hotkey_marker_2(void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed)
-{
-	if (!pressed)
-		return;
-	auto *self = static_cast<ObsBridge *>(data);
-	if (self) {
-		emit self->obsTriggerMarker2();
-	}
-}
-
-void ObsBridge::on_hotkey_marker_3(void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed)
-{
-	if (!pressed)
-		return;
-	auto *self = static_cast<ObsBridge *>(data);
-	if (self) {
-		emit self->obsTriggerMarker3();
-	}
-}
-
-void ObsBridge::on_hotkey_marker_4(void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed)
-{
-	if (!pressed)
-		return;
-	auto *self = static_cast<ObsBridge *>(data);
-	if (self) {
-		emit self->obsTriggerMarker4();
-	}
-}
-
-void ObsBridge::on_hotkey_focus_memo(void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed)
-{
-	if (!pressed)
-		return;
-	auto *self = static_cast<ObsBridge *>(data);
-	if (self) {
-		emit self->obsFocusMemoRequested();
-	}
+	auto *binding = static_cast<HotkeyBinding *>(data);
+	if (binding->index < 4)
+		emit binding->owner->quickMarkerRequested(binding->index);
+	else
+		emit binding->owner->focusMemoRequested();
 }
 
 std::string ObsBridge::recovery_cache_directory() const
@@ -355,4 +290,20 @@ std::string ObsBridge::recovery_cache_directory() const
 	std::string result = path;
 	bfree(path);
 	return result;
+}
+
+RecordingSnapshot ObsBridge::snapshot() const
+{
+	RecordingSnapshot value;
+	value.recording = is_recording();
+	value.paused = value.recording && is_paused();
+	value.total_frames = get_current_record_frames();
+	value.path = get_current_record_file_path();
+	value.fps = get_current_frame_rate();
+	get_video_dimension(value.width, value.height);
+	return value;
+}
+void ObsBridge::drain_pending_events()
+{
+	QCoreApplication::sendPostedEvents(this, QEvent::MetaCall);
 }

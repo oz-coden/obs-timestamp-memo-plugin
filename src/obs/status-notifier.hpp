@@ -1,22 +1,20 @@
 #pragma once
-
-#include <string>
 #include <QObject>
-
+#include <QPointer>
+#include <QStatusBar>
+class QMainWindow;
+class PluginConfig;
 class StatusNotifier : public QObject {
 	Q_OBJECT
-
 public:
-	static StatusNotifier &instance();
-	void initialize();
+	StatusNotifier(QMainWindow &window, const PluginConfig &config);
+	void initialize() { enabled_ = true; }
 	void shutdown();
-
-	void notify(const std::string &message, int timeout_ms = 3000);
-
-signals:
-	void notificationRequested(const QString &message, int timeout_ms);
+public slots:
+	void notify(const QString &message, int timeout = 3000);
 
 private:
-	StatusNotifier();
+	QPointer<QStatusBar> status_bar_;
+	const PluginConfig &config_;
 	bool enabled_ = false;
 };

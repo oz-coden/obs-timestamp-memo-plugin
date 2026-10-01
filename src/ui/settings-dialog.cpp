@@ -8,8 +8,9 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QVBoxLayout>
+#include <QPointer>
 
-SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent)
+SettingsDialog::SettingsDialog(PluginConfig &config, QWidget *parent) : QDialog(parent), config_(config)
 {
 	setWindowTitle("Timestamp Memo - Settings");
 	setMinimumWidth(440);
@@ -100,7 +101,7 @@ void SettingsDialog::setup_ui()
 
 void SettingsDialog::load_values()
 {
-	const auto &cfg = PluginConfig::instance();
+	const auto &cfg = config_.values();
 
 	for (int i = 0; i < 4 && i < static_cast<int>(cfg.marker_types.size()); ++i) {
 		marker_slots_[i].label_edit->setText(QString::fromStdString(cfg.marker_types[i].label));
@@ -125,13 +126,18 @@ void SettingsDialog::load_values()
 
 void SettingsDialog::onResetDefaultsClicked()
 {
+	QPointer<SettingsDialog> guard(this);
 	auto res = QMessageBox::question(this, "Reset Settings", "Reset all settings to default values?",
 					 QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-	if (res != QMessageBox::Yes)
+	if (!guard || res != QMessageBox::Yes)
 		return;
 
-	const QString default_labels[4] = {"Marker 1", "Chapter", "Highlight", "Cut / Edit"};
-	const QString default_colors[4] = {"#3498db", "#2ecc71", "#f1c40f", "#e74c3c"};
+	const PluginSettings defaults;
+	std::array<QString, 4> default_labels, default_colors;
+	for (int i = 0; i < 4; ++i) {
+		default_labels[i] = QString::fromStdString(defaults.marker_types[i].label);
+		default_colors[i] = QString::fromStdString(defaults.marker_types[i].color);
+	}
 
 	for (int i = 0; i < 4; ++i) {
 		marker_slots_[i].label_edit->setText(default_labels[i]);
@@ -156,12 +162,13 @@ void SettingsDialog::onResetDefaultsClicked()
 
 void SettingsDialog::onPickColor(int index)
 {
+	QPointer<SettingsDialog> guard(this);
 	if (index < 0 || index >= static_cast<int>(marker_slots_.size()))
 		return;
 
 	QColor initial(marker_slots_[index].current_color);
 	QColor color = QColorDialog::getColor(initial, this, QString("Select Color for Marker %1").arg(index + 1));
-	if (color.isValid()) {
+	if (guard && color.isValid()) {
 		marker_slots_[index].current_color = color.name();
 		marker_slots_[index].color_btn->setStyleSheet(
 			QString("background-color: %1; color: %2; font-weight: bold; border-radius: 3px;")
@@ -172,7 +179,7 @@ void SettingsDialog::onPickColor(int index)
 
 void SettingsDialog::onSaveClicked()
 {
-	auto &cfg = PluginConfig::instance();
+	auto cfg = config_.values();
 
 	for (int i = 0; i < 4 && i < static_cast<int>(marker_slots_.size()); ++i) {
 		QString label = marker_slots_[i].label_edit->text().trimmed();
@@ -194,9 +201,9 @@ void SettingsDialog::onSaveClicked()
 
 	cfg.show_status_bar_notification = chk_status_bar_->isChecked();
 
-	if (!cfg.save()) {
+	if (!config_.save(cfg)) {
 		QMessageBox::warning(this, "Settings Error",
-				     "Settings changed for this session, but could not be saved to disk.");
+				     "Could not save settings. Your previous settings remain active.");
 		return;
 	}
 

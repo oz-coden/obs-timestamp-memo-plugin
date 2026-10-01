@@ -8,12 +8,6 @@
 #include "xml-exporter.hpp"
 #include "youtube-exporter.hpp"
 
-ExporterRegistry &ExporterRegistry::instance()
-{
-	static ExporterRegistry reg;
-	return reg;
-}
-
 ExporterRegistry::ExporterRegistry()
 {
 	register_defaults();

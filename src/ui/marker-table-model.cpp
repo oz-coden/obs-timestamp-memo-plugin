@@ -119,19 +119,14 @@ bool MarkerTableModel::setData(const QModelIndex &index, const QVariant &value, 
 	    index.row() >= static_cast<int>(markers_.size()))
 		return false;
 
-	auto &m = markers_[index.row()];
+	auto marker = markers_[index.row()];
 	if (index.column() == Col_Comment) {
-		m.comment = value.toString().toStdString();
-		const auto marker = m;
-		emit dataChanged(index, index, {Qt::DisplayRole, Qt::EditRole});
-		emit markerCommentChanged(marker.id, value.toString());
+		marker.comment = value.toString().toStdString();
 		emit markerDataChanged(marker.id, QString::fromStdString(marker.label),
 				       QString::fromStdString(marker.comment));
 		return true;
 	} else if (index.column() == Col_Label) {
-		m.label = value.toString().toStdString();
-		const auto marker = m;
-		emit dataChanged(index, index, {Qt::DisplayRole, Qt::EditRole});
+		marker.label = value.toString().toStdString();
 		emit markerDataChanged(marker.id, QString::fromStdString(marker.label),
 				       QString::fromStdString(marker.comment));
 		return true;

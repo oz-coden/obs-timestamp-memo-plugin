@@ -192,7 +192,8 @@ bool obs_frontend_add_dock_by_id(const char *, const char *title, void *widget)
 void obs_frontend_remove_dock(const char *)
 {
 	frontend_call();
-	delete outer_dock;
+	// Exercise a host that defers outer dock destruction.
+	outer_dock->deleteLater();
 	outer_dock = nullptr;
 }
 

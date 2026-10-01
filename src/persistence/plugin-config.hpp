@@ -1,0 +1,18 @@
+#pragma once
+#include "plugin-settings.hpp"
+#include <QObject>
+#include <QSettings>
+class PluginConfig : public QObject {
+	Q_OBJECT
+public:
+	explicit PluginConfig(QSettings::Format format = QSettings::defaultFormat()) : format_(format) {}
+	bool load();
+	bool save(const PluginSettings &candidate);
+	const PluginSettings &values() const { return values_; }
+signals:
+	void configChanged();
+
+private:
+	PluginSettings values_;
+	QSettings::Format format_;
+};

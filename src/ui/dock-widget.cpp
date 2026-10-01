@@ -1,10 +1,8 @@
 #include "dock-widget.hpp"
 #include "export-dialog.hpp"
-#include "obs-bridge.hpp"
 #include "plugin-config.hpp"
 #include "session-controller.hpp"
 #include "settings-dialog.hpp"
-#include "status-notifier.hpp"
 #include "timecode-helper.hpp"
 #include "youtube-exporter.hpp"
 
@@ -21,14 +19,18 @@
 #include <QVBoxLayout>
 #include <QDockWidget>
 
-DockWidget::DockWidget(QWidget *parent) : QWidget(parent)
+DockWidget::DockWidget(SessionController &controller, PluginConfig &config, ExporterRegistry &exporters,
+		       QWidget *parent)
+	: QWidget(parent),
+	  controller_(controller),
+	  config_(config),
+	  exporters_(exporters)
 {
 	setObjectName("ObsTimestampMemoDock");
 	setWindowTitle("Timestamp Memo & Markers");
 
 	setup_ui();
 
-	auto &controller = SessionController::instance();
 	connect(&controller, &SessionController::markerAdded, this, &DockWidget::onMarkerAdded);
 	connect(&controller, &SessionController::markerUpdated, this, &DockWidget::onMarkerUpdated);
 	connect(&controller, &SessionController::markerRemoved, this, &DockWidget::onMarkerRemoved);
@@ -41,7 +43,7 @@ DockWidget::DockWidget(QWidget *parent) : QWidget(parent)
 	connect(&controller, &SessionController::videoPathResolved, this, &DockWidget::onVideoPathResolved);
 	connect(&controller, &SessionController::focusMemoInputRequested, this, &DockWidget::onFocusMemoInputRequested);
 
-	connect(&PluginConfig::instance(), &PluginConfig::configChanged, this, [this]() {
+	connect(&config_, &PluginConfig::configChanged, this, [this]() {
 		refreshMarkerButtons();
 		table_view_->viewport()->update();
 	});
@@ -179,7 +181,7 @@ void DockWidget::keyPressEvent(QKeyEvent *event)
 			const auto &markers = table_model_->get_markers();
 			if (row >= 0 && row < static_cast<int>(markers.size())) {
 				uint32_t mid = markers[row].id;
-				SessionController::instance().delete_marker(mid);
+				controller_.delete_marker(mid);
 				event->accept();
 				return;
 			}
@@ -190,7 +192,7 @@ void DockWidget::keyPressEvent(QKeyEvent *event)
 
 void DockWidget::refreshMarkerButtons()
 {
-	const auto &cfg = PluginConfig::instance();
+	const auto &cfg = config_.values();
 	for (int i = 0; i < 4 && i < static_cast<int>(cfg.marker_types.size()); ++i) {
 		QString label = QString::fromStdString(cfg.marker_types[i].label);
 		QString color = QString::fromStdString(cfg.marker_types[i].color);
@@ -205,38 +207,30 @@ void DockWidget::refreshMarkerButtons()
 
 void DockWidget::update_status_ui()
 {
-	auto &controller = SessionController::instance();
+	auto &controller = controller_;
 	bool rec = controller.is_recording();
 
 	btn_open_->setEnabled(!rec);
 
-	if (rec) {
-		if (controller.is_paused()) {
-			lbl_status_->setText("⏸ PAUSED");
-			lbl_status_->setStyleSheet("font-weight: bold; color: #f39c12;");
-		} else {
-			lbl_status_->setText("● REC");
-			lbl_status_->setStyleSheet("font-weight: bold; color: #e74c3c;");
-		}
-		std::string path = controller.current_video_path();
-		if (!path.empty()) {
-			QFileInfo fi(QString::fromStdString(path));
-			lbl_video_name_->setText(fi.fileName());
-		}
-	} else {
-		lbl_status_->setText("■ STOPPED");
-		lbl_status_->setStyleSheet("font-weight: bold; color: #888888;");
-		if (controller.current_video_path().empty()) {
-			lbl_video_name_->setText("No active recording");
-		}
-	}
+	for (auto *button : quick_marker_btns_)
+		button->setEnabled(rec);
+	btn_add_memo_->setEnabled(rec);
+	bool has_markers = !controller.session().get_markers().empty();
+	if (!rec)
+		lbl_live_time_->setText("—");
+	btn_export_->setEnabled(has_markers);
+	btn_clear_->setEnabled(has_markers);
+	lbl_status_->setText(rec ? (controller.is_paused() ? "⏸ PAUSED" : "● REC") : "■ STOPPED");
+	lbl_status_->setStyleSheet(QString("font-weight:bold;color:%1;")
+					   .arg(rec ? (controller.is_paused() ? "#f39c12" : "#e74c3c") : "#888888"));
+	lbl_video_name_->setText(controller.document_title());
 }
 
 void DockWidget::updateLiveTimer()
 {
-	auto &controller = SessionController::instance();
+	auto &controller = controller_;
 	if (controller.is_recording()) {
-		controller.check_recording_file_changed();
+
 		uint64_t ms = controller.current_record_ms();
 		lbl_live_time_->setText(QString::fromStdString(TimecodeHelper::ms_to_timestamp_str(ms, true)));
 	}
@@ -244,7 +238,7 @@ void DockWidget::updateLiveTimer()
 
 void DockWidget::onQuickMarkerClicked(int index)
 {
-	SessionController::instance().trigger_quick_marker(index);
+	controller_.trigger_quick_marker(index);
 }
 
 void DockWidget::onAddMemoClicked()
@@ -254,20 +248,21 @@ void DockWidget::onAddMemoClicked()
 		return;
 	}
 
-	if (SessionController::instance().add_memo_marker(text.toStdString(), 0)) {
+	if (controller_.add_memo_marker(text.toStdString(), 0)) {
 		edit_memo_->clear();
 	}
 }
 
 void DockWidget::onOpenJsonClicked()
 {
-	if (SessionController::instance().is_recording()) {
+	QPointer<DockWidget> guard(this);
+	if (controller_.is_recording()) {
 		QMessageBox::warning(this, "Action Blocked", "Cannot open another file while recording is active.");
 		return;
 	}
 
 	QString initial_dir = "";
-	std::string current_path = SessionController::instance().current_video_path();
+	std::string current_path = controller_.current_video_path();
 	if (!current_path.empty()) {
 		QFileInfo fi(QString::fromStdString(current_path));
 		initial_dir = fi.dir().absolutePath();
@@ -277,32 +272,28 @@ void DockWidget::onOpenJsonClicked()
 		this, "Open Recording JSON or Cache", initial_dir,
 		"JSON / Cache Files (*.json *.tmp.jsonl);;JSON Files (*.json);;Cache Files (*.tmp.jsonl);;All Files "
 		"(*.*)");
-	if (path.isEmpty()) {
+	if (!guard || path.isEmpty()) {
 		return;
 	}
 
-	auto &controller = SessionController::instance();
+	auto &controller = controller_;
 	bool loaded = false;
 
 	if (path.endsWith(".tmp.jsonl", Qt::CaseInsensitive)) {
 		loaded = controller.recover_from_cache(path.toStdString());
 		if (loaded) {
-			QFileInfo fi(path);
-			lbl_video_name_->setText(fi.fileName() + " (Recovered)");
-			StatusNotifier::instance().notify(
-				"Recovered " + std::to_string(controller.session().get_markers().size()) +
-					" markers from cache",
-				3000);
+			update_status_ui();
+			controller_.notify("Recovered " + std::to_string(controller.session().get_markers().size()) +
+						   " markers from cache",
+					   3000);
 		}
 	} else {
 		loaded = controller.load_from_json(path.toStdString());
 		if (loaded) {
-			QFileInfo fi(path);
-			lbl_video_name_->setText(fi.fileName() + " (Loaded)");
-			StatusNotifier::instance().notify(
-				"Loaded " + std::to_string(controller.session().get_markers().size()) +
-					" markers from JSON",
-				2000);
+			update_status_ui();
+			controller_.notify("Loaded " + std::to_string(controller.session().get_markers().size()) +
+						   " markers from JSON",
+					   2000);
 		}
 	}
 
@@ -313,20 +304,34 @@ void DockWidget::onOpenJsonClicked()
 
 void DockWidget::onExportClicked()
 {
-	const auto &session = SessionController::instance().session();
+	const auto &session = controller_.session();
 	if (session.get_markers().empty()) {
-		QMessageBox::information(this, "Export", "There are no markers to export.");
+		controller_.notify("There are no markers to export.", 2000);
 		return;
 	}
 
-	ExportDialog dlg(session, this);
-	dlg.exec();
+	if (export_dialog_ && export_dialog_->session_id() != session.session_id()) {
+		export_dialog_->close();
+		export_dialog_.clear();
+	}
+	if (!export_dialog_) {
+		export_dialog_ = new ExportDialog(session, exporters_, this);
+		export_dialog_->setAttribute(Qt::WA_DeleteOnClose);
+	}
+	export_dialog_->show();
+	export_dialog_->raise();
+	export_dialog_->activateWindow();
 }
 
 void DockWidget::onSettingsClicked()
 {
-	SettingsDialog dlg(this);
-	dlg.exec();
+	if (!settings_dialog_) {
+		settings_dialog_ = new SettingsDialog(config_, this);
+		settings_dialog_->setAttribute(Qt::WA_DeleteOnClose);
+	}
+	settings_dialog_->show();
+	settings_dialog_->raise();
+	settings_dialog_->activateWindow();
 }
 
 void DockWidget::onClearClicked()
@@ -334,16 +339,18 @@ void DockWidget::onClearClicked()
 	if (table_model_->get_markers().empty())
 		return;
 
+	const auto session_id = controller_.session().session_id();
+	QPointer<DockWidget> guard(this);
 	auto btn = QMessageBox::question(this, "Clear Markers", "Are you sure you want to clear all markers?",
 					 QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-	if (btn == QMessageBox::Yes) {
-		SessionController::instance().clear_markers();
+	if (guard && btn == QMessageBox::Yes && controller_.session().session_id() == session_id) {
+		controller_.clear_markers();
 	}
 }
 
 void DockWidget::onMarkerDataChanged(uint32_t marker_id, const QString &label, const QString &comment)
 {
-	SessionController::instance().update_marker_data(marker_id, label.toStdString(), "", comment.toStdString());
+	controller_.update_marker_data(marker_id, label.toStdString(), "", comment.toStdString());
 }
 
 void DockWidget::onContextMenuRequested(const QPoint &pos)
@@ -359,11 +366,13 @@ void DockWidget::onContextMenuRequested(const QPoint &pos)
 
 	// QMenu::exec processes recording/hotkey events that can reset the model.
 	const auto marker = markers[row];
-	auto &controller = SessionController::instance();
+	auto &controller = controller_;
 	const auto fps = controller.session().frame_rate();
 	const auto session_id = controller.session().session_id();
+	const auto session_snapshot = controller.session();
 
-	QMenu menu(this);
+	QPointer<DockWidget> guard(this);
+	QMenu menu;
 
 	QAction *act_copy_tc = menu.addAction("Copy Timecode");
 	QAction *act_copy_memo = menu.addAction("Copy Memo Text");
@@ -372,12 +381,12 @@ void DockWidget::onContextMenuRequested(const QPoint &pos)
 	menu.addSeparator();
 
 	QMenu *menu_type = menu.addMenu("Change Type");
-	const auto &cfg = PluginConfig::instance();
+	const auto &cfg = config_.values();
 	for (int i = 0; i < 4 && i < static_cast<int>(cfg.marker_types.size()); ++i) {
 		QString label = QString::fromStdString(cfg.marker_types[i].label);
 		QAction *act_type = menu_type->addAction(QString("%1: %2").arg(i + 1).arg(label));
-		connect(act_type, &QAction::triggered, this, [marker_id = marker.id, session_id, i]() {
-			auto &current = SessionController::instance();
+		connect(act_type, &QAction::triggered, this, [this, marker_id = marker.id, session_id, i]() {
+			auto &current = controller_;
 			if (current.session().session_id() == session_id)
 				current.update_marker_type(marker_id, i);
 		});
@@ -387,7 +396,7 @@ void DockWidget::onContextMenuRequested(const QPoint &pos)
 	QAction *act_del = menu.addAction("Delete Marker");
 
 	QAction *selected = menu.exec(table_view_->viewport()->mapToGlobal(pos));
-	if (!selected)
+	if (!guard || !selected)
 		return;
 
 	if (selected == act_copy_tc) {
@@ -396,9 +405,9 @@ void DockWidget::onContextMenuRequested(const QPoint &pos)
 	} else if (selected == act_copy_memo) {
 		QGuiApplication::clipboard()->setText(QString::fromStdString(marker.comment));
 	} else if (selected == act_copy_yt) {
-		std::string yt = YoutubeExporter::generate_chapters(controller.session());
+		std::string yt = YoutubeExporter::generate_chapters(session_snapshot);
 		QGuiApplication::clipboard()->setText(QString::fromStdString(yt));
-		StatusNotifier::instance().notify("Copied YouTube chapters to clipboard", 2500);
+		controller_.notify("Copied YouTube chapters to clipboard", 2500);
 	} else if (selected == act_del) {
 		if (controller.session().session_id() == session_id)
 			controller.delete_marker(marker.id);
@@ -407,8 +416,9 @@ void DockWidget::onContextMenuRequested(const QPoint &pos)
 
 void DockWidget::onMarkerAdded(const MemoMarker &marker, int)
 {
-	table_model_->add_marker(marker, SessionController::instance().session().frame_rate());
+	table_model_->add_marker(marker, controller_.session().frame_rate());
 	table_view_->scrollToBottom();
+	update_status_ui();
 }
 
 void DockWidget::onMarkerUpdated(const MemoMarker &marker, int row)
@@ -419,11 +429,13 @@ void DockWidget::onMarkerUpdated(const MemoMarker &marker, int row)
 void DockWidget::onMarkerRemoved(uint32_t id, int row)
 {
 	table_model_->remove_marker(id, row);
+	update_status_ui();
 }
 
 void DockWidget::onMarkersReset(const std::vector<MemoMarker> &markers, const VideoFrameRate &fps)
 {
 	table_model_->set_markers(markers, fps);
+	update_status_ui();
 }
 
 void DockWidget::onSessionStarted(const QString &)
@@ -446,10 +458,9 @@ void DockWidget::onSessionStopped(const QString &)
 	update_status_ui();
 }
 
-void DockWidget::onVideoPathResolved(const QString &newVideoPath)
+void DockWidget::onVideoPathResolved(const QString &)
 {
-	QFileInfo fi(newVideoPath);
-	lbl_video_name_->setText(fi.fileName());
+	update_status_ui();
 }
 
 void DockWidget::onFocusMemoInputRequested()

@@ -6,13 +6,6 @@
 #include <string>
 #include <vector>
 
-struct MarkerTypeConfig {
-	int type_index = 0;
-	std::string label = "Marker 1";
-	std::string color = "#3498db";
-	std::string hotkey_name = "marker_1";
-};
-
 class MemoMarker {
 public:
 	uint32_t id = 0;

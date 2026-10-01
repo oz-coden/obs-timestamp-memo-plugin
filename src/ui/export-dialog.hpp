@@ -9,11 +9,15 @@
 #include <QDialog>
 #include <QPushButton>
 
+class ExporterRegistry;
+
 class ExportDialog : public QDialog {
 	Q_OBJECT
 
 public:
-	explicit ExportDialog(const RecordingSession &session, QWidget *parent = nullptr);
+	const std::string &session_id() const { return session_.session_id(); }
+	explicit ExportDialog(const RecordingSession &session, const ExporterRegistry &exporters,
+			      QWidget *parent = nullptr);
 
 private slots:
 	void onExportClicked();

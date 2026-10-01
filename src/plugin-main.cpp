@@ -7,26 +7,30 @@
 #include <QThread>
 
 #include "dock-widget.hpp"
-#include "session-controller.hpp"
+#include "plugin-runtime.hpp"
+#include <memory>
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
 
 static QPointer<DockWidget> g_dock_widget;
 static bool g_registered = false;
-static bool g_initialized = false;
+static std::unique_ptr<PluginRuntime> g_runtime;
 
 static void cleanup()
 {
-	if (!g_initialized)
+	if (!g_runtime)
 		return;
-	g_initialized = false;
-	SessionController::instance().shutdown();
+	g_runtime->shutdown();
 	if (g_registered) {
 		g_registered = false;
 		obs_frontend_remove_dock("obs_timestamp_memo_dock");
 	}
+	// Destroy any remaining views before their injected services. This also
+	// covers hosts that defer deletion of the removed outer dock.
+	delete g_dock_widget.data();
 	g_dock_widget.clear();
+	g_runtime.reset();
 }
 
 static void on_frontend_event(enum obs_frontend_event event, void *)
@@ -39,7 +43,7 @@ static void on_frontend_event(enum obs_frontend_event event, void *)
 
 bool obs_module_load(void)
 {
-	if (g_initialized)
+	if (g_runtime)
 		return true;
 	obs_log(LOG_INFO, "[%s] version %s loading...", PLUGIN_NAME, PLUGIN_VERSION);
 
@@ -55,9 +59,8 @@ bool obs_module_load(void)
 	// Register before ObsBridge: OBS dispatches callbacks in reverse order, so
 	// the bridge can unregister itself on EXIT before this callback cleans up.
 	obs_frontend_add_event_callback(on_frontend_event, nullptr);
-	g_initialized = true;
-	SessionController::instance().initialize();
-	g_dock_widget = new DockWidget(main_win);
+	g_runtime = std::make_unique<PluginRuntime>(*main_win);
+	g_dock_widget = new DockWidget(g_runtime->controller, g_runtime->config, g_runtime->exporters, main_win);
 
 	if (!obs_frontend_add_dock_by_id("obs_timestamp_memo_dock", "Timestamp Memo & Markers", g_dock_widget.data())) {
 		delete g_dock_widget.data();
@@ -75,7 +78,7 @@ bool obs_module_load(void)
 void obs_module_unload(void)
 {
 	obs_log(LOG_INFO, "[%s] unloading...", PLUGIN_NAME);
-	if (g_initialized) {
+	if (g_runtime) {
 		cleanup();
 		obs_frontend_remove_event_callback(on_frontend_event, nullptr);
 	}

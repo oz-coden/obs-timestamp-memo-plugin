@@ -10,13 +10,22 @@
 #include <QPushButton>
 #include <QTableView>
 #include <QTimer>
+#include <QPointer>
 
 // Content widget. obs_frontend_add_dock_by_id owns the outer QDockWidget.
+class SessionController;
+class PluginConfig;
+class ExporterRegistry;
+class ExportDialog;
+class SettingsDialog;
+
 class DockWidget : public QWidget {
 	Q_OBJECT
 
 public:
-	explicit DockWidget(QWidget *parent = nullptr);
+	DockWidget(SessionController &controller, PluginConfig &config, ExporterRegistry &exporters,
+		   QWidget *parent = nullptr);
+	SessionController &controller() const { return controller_; }
 	~DockWidget();
 
 public slots:
@@ -49,6 +58,11 @@ private slots:
 	void onFocusMemoInputRequested();
 
 private:
+	SessionController &controller_;
+	PluginConfig &config_;
+	ExporterRegistry &exporters_;
+	QPointer<ExportDialog> export_dialog_;
+	QPointer<SettingsDialog> settings_dialog_;
 	void setup_ui();
 	void update_status_ui();
 
