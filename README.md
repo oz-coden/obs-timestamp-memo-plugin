@@ -19,6 +19,8 @@ Japanese section is [available](#目次) in below this section.
 **OBS Timestamp Memo** is a high-precision timestamping and marker annotation dock plugin for OBS Studio. It enables creators, streamers, and video editors to stamp chapter markers, edit points, highlights, and comments in real-time during recording.  
 Recorded markers can be exported to multiple formats including YouTube Chapters, Markdown documents, DaVinci Resolve CSV, CMX 3600 EDL, WebVTT / SRT subtitles, and Premiere Pro XML.
 
+Development documentation: [architecture and design review](docs/architecture-and-refactoring.md), [tests](tests/README.md), and [OBS verification steps](docs/obs-manual-test.md).
+
 ## Background of Development
 
 During long live streams, gaming sessions, or recording workflows, locating highlights, memorable moments, or cut points in post-production is extremely tedious and time-consuming. Scrubbing through hours of footage to find a single moment wastes significant editing time.  
@@ -59,6 +61,7 @@ This plugin was developed to bridge OBS Studio and video editing software (NLEs)
 4. **Exporting**:
    - Click `Export...` to choose any target format, or click `Copy to Clipboard` to directly paste chapters or Markdown into YouTube description or Notion.
    - Configure automatic export upon recording stop in settings.
+   - Export and Settings stay modeless, allowing OBS operations while they are open. Copy success does not require dismissing a dialog.
 
 ## Requirements, Dependencies
 

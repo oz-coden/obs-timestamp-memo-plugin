@@ -1,41 +1,60 @@
-# Regression tests
+# Tests
 
-These tests compile the production C++ and Qt UI against small OBS API stubs.
-They do not load OBS or change its configuration. QSettings and session files use
-a temporary directory. An actual OBS run is still required for encoder timing,
-hotkey persistence, dock placement, and NLE interoperability.
+Three layers test behavior without launching OBS:
 
-Requirements: CMake 3.28+, a C++20 compiler, and Qt6 Core/Gui/Widgets with the
-minimal platform plugin. The bundled Windows Qt package has minimal but does not
-have offscreen; CTest selects minimal and adds the Qt DLL directory to PATH.
+|Target|Dependencies|Coverage|
+|---|---|---|
+|domain_tests|C++20 only|FPS/timecode, exact marker frames, document CRUD/IDs, timeline transitions and segments, shared export text|
+|application_tests|Qt6 Core/Gui, FakeGateway|Recording commands, delayed path, split rejection, edits/history, serialization/recovery, settings conversion and failed writes, repeated initialization|
+|regressions|Qt6 Core/Gui/Widgets, OBS stubs|All eight exporters, dialog snapshots, clipboard, model edits/reentrancy, worker events, hotkeys, registration/EXIT/unload|
 
-Windows (with the dependencies downloaded by the plugin build):
+Tests use temporary session files and explicitly select INI QSettings in a
+temporary directory. They do not load OBS or write its configuration. The
+production default remains the existing native settings format.
+
+Requirements: CMake 3.28+, C++20 compiler, and (for the full suite) Qt6 with the
+minimal platform plugin. CTest selects minimal and adds the Qt DLL directory to
+PATH. For the reported standalone regressions GUI platform initialization error,
+run through CTest with this environment. The exact cause of that earlier error
+has not been reproduced.
+
+Windows, after the plugin dependencies have been downloaded:
 
     cmake -S tests -B build_tests -A x64 -DCMAKE_PREFIX_PATH="$PWD/.deps/obs-deps-qt6-2025-07-11-x64"
     cmake --build build_tests --config RelWithDebInfo --parallel
     ctest --test-dir build_tests -C RelWithDebInfo --output-on-failure
 
-Linux/macOS (set CMAKE_PREFIX_PATH if Qt is outside its default search paths):
+Linux/macOS (set CMAKE_PREFIX_PATH when necessary):
 
     cmake -S tests -B build_tests -DCMAKE_BUILD_TYPE=RelWithDebInfo
     cmake --build build_tests --parallel
     ctest --test-dir build_tests --output-on-failure
 
-The executable contains six groups: timecodes; JSON/FPS/edit persistence;
-journal recovery and failures; eight exporters and dialog snapshots; model
-reentrancy; and module/controller/UI lifecycle. The final group exercises
-worker-thread split events, a split immediately before stop, pause stamping,
-encoder FPS divisors/scaling, context-menu reentrancy, repeated initialization,
-EXIT cleanup, and failed dock registration.
+Pure logic alone, without installing Qt or OBS:
+
+    cmake -S tests -B build_domain -DENABLE_INTEGRATION_TESTS=OFF
+    cmake --build build_domain --config RelWithDebInfo --parallel
+    ctest --test-dir build_domain -C RelWithDebInfo --output-on-failure
 
 Warnings are errors (/W4 /WX on MSVC, -Wall -Wextra -Werror otherwise).
-OBS stubs reproduce the reviewed OBS 31.1.1 interfaces and callback ordering;
-they cannot establish binary compatibility or actual muxer timing.
+Clipboard success is checked without a timer dismissing modal dialogs, so a
+reintroduced success modal fails by test timeout. Model edits verify propagation
+through the controller instead of duplicating state changes in the widget.
+The unload stub deliberately defers outer dock deletion to exercise service/view
+lifetime ordering. OBS stubs reproduce the reviewed OBS 31.1.1 APIs; actual muxer
+timing, dock placement, hotkey persistence and NLE interoperability need OBS.
 
-For clang-tidy against the production compile database, Windows clang needs the
+For clang-tidy, obtain a compile database from the production build (e.g. a
+Ninja build with CMAKE_EXPORT_COMPILE_COMMANDS=ON). Windows clang also needs the
 declaration-only analyzer-compat.hpp for OBS 31.1.1's _udiv128 header path:
 
-    clang-tidy src/obs/obs-bridge.cpp -p . --checks=-*,clang-analyzer-core.*,clang-analyzer-cplusplus.*,clang-analyzer-deadcode.* --extra-arg=-include --extra-arg=tests/analyzer-compat.hpp
+    clang-tidy src/obs/obs-bridge.cpp -p BUILD_WITH_COMPILE_DATABASE --checks=-*,clang-analyzer-core.*,clang-analyzer-cplusplus.*,clang-analyzer-deadcode.* --extra-arg=-include --extra-arg=tests/analyzer-compat.hpp
 
-That compatibility header is only for analysis and is not linked into the plugin.
-See [OBS manual tests](../docs/obs-manual-test.md) for remaining runtime checks.
+That compatibility header is never linked into the plugin. The local Windows
+review used an ignored analysis database reflecting all current source paths and
+include directories. All 25 implementation files were analyzed; a Qt-owned
+layout produces a known potential leak false positive, with ownership checked by
+the dialog lifetime regressions.
+
+See [architecture and review](../docs/architecture-and-refactoring.md) and
+[OBS manual tests](../docs/obs-manual-test.md).
