@@ -19,8 +19,9 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QVBoxLayout>
+#include <QDockWidget>
 
-DockWidget::DockWidget(QWidget *parent) : QDockWidget(parent)
+DockWidget::DockWidget(QWidget *parent) : QWidget(parent)
 {
 	setObjectName("ObsTimestampMemoDock");
 	setWindowTitle("Timestamp Memo & Markers");
@@ -53,13 +54,14 @@ DockWidget::DockWidget(QWidget *parent) : QDockWidget(parent)
 
 	update_status_ui();
 	refreshMarkerButtons();
+	table_model_->set_markers(controller.session().get_markers(), controller.session().frame_rate());
 }
 
 DockWidget::~DockWidget() {}
 
 void DockWidget::setup_ui()
 {
-	auto *container = new QWidget(this);
+	auto *container = this;
 	auto *main_layout = new QVBoxLayout(container);
 	main_layout->setContentsMargins(6, 6, 6, 6);
 	main_layout->setSpacing(6);
@@ -166,13 +168,11 @@ void DockWidget::setup_ui()
 	bottom_layout->addStretch();
 	bottom_layout->addWidget(btn_settings_);
 	main_layout->addLayout(bottom_layout);
-
-	setWidget(container);
 }
 
 void DockWidget::keyPressEvent(QKeyEvent *event)
 {
-	if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
+	if (table_view_->hasFocus() && (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace)) {
 		QModelIndex idx = table_view_->currentIndex();
 		if (idx.isValid()) {
 			int row = idx.row();
@@ -185,7 +185,7 @@ void DockWidget::keyPressEvent(QKeyEvent *event)
 			}
 		}
 	}
-	QDockWidget::keyPressEvent(event);
+	QWidget::keyPressEvent(event);
 }
 
 void DockWidget::refreshMarkerButtons()
@@ -357,8 +357,11 @@ void DockWidget::onContextMenuRequested(const QPoint &pos)
 	if (row < 0 || row >= static_cast<int>(markers.size()))
 		return;
 
-	const auto &marker = markers[row];
+	// QMenu::exec processes recording/hotkey events that can reset the model.
+	const auto marker = markers[row];
 	auto &controller = SessionController::instance();
+	const auto fps = controller.session().frame_rate();
+	const auto session_id = controller.session().session_id();
 
 	QMenu menu(this);
 
@@ -373,8 +376,10 @@ void DockWidget::onContextMenuRequested(const QPoint &pos)
 	for (int i = 0; i < 4 && i < static_cast<int>(cfg.marker_types.size()); ++i) {
 		QString label = QString::fromStdString(cfg.marker_types[i].label);
 		QAction *act_type = menu_type->addAction(QString("%1: %2").arg(i + 1).arg(label));
-		connect(act_type, &QAction::triggered, this, [marker_id = marker.id, i]() {
-			SessionController::instance().update_marker_type(marker_id, i);
+		connect(act_type, &QAction::triggered, this, [marker_id = marker.id, session_id, i]() {
+			auto &current = SessionController::instance();
+			if (current.session().session_id() == session_id)
+				current.update_marker_type(marker_id, i);
 		});
 	}
 
@@ -386,7 +391,7 @@ void DockWidget::onContextMenuRequested(const QPoint &pos)
 		return;
 
 	if (selected == act_copy_tc) {
-		std::string tc = marker.active_timecode(controller.current_frame_rate());
+		std::string tc = marker.active_timecode(fps);
 		QGuiApplication::clipboard()->setText(QString::fromStdString(tc));
 	} else if (selected == act_copy_memo) {
 		QGuiApplication::clipboard()->setText(QString::fromStdString(marker.comment));
@@ -395,13 +400,14 @@ void DockWidget::onContextMenuRequested(const QPoint &pos)
 		QGuiApplication::clipboard()->setText(QString::fromStdString(yt));
 		StatusNotifier::instance().notify("Copied YouTube chapters to clipboard", 2500);
 	} else if (selected == act_del) {
-		controller.delete_marker(marker.id);
+		if (controller.session().session_id() == session_id)
+			controller.delete_marker(marker.id);
 	}
 }
 
 void DockWidget::onMarkerAdded(const MemoMarker &marker, int)
 {
-	table_model_->add_marker(marker, SessionController::instance().current_frame_rate());
+	table_model_->add_marker(marker, SessionController::instance().session().frame_rate());
 	table_view_->scrollToBottom();
 }
 
@@ -448,6 +454,11 @@ void DockWidget::onVideoPathResolved(const QString &newVideoPath)
 
 void DockWidget::onFocusMemoInputRequested()
 {
+	if (auto *dock = qobject_cast<QDockWidget *>(parentWidget())) {
+		dock->show();
+		dock->raise();
+		dock->activateWindow();
+	}
 	edit_memo_->setFocus();
 	edit_memo_->selectAll();
 }

@@ -23,7 +23,7 @@ private slots:
 private:
 	void setup_ui();
 
-	const RecordingSession &session_;
+	const RecordingSession session_;
 	QButtonGroup *btn_group_ = nullptr;
 	QPushButton *btn_copy_ = nullptr;
 	std::vector<std::shared_ptr<IExporter>> exporters_;

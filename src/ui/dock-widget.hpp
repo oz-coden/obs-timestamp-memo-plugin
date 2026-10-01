@@ -3,7 +3,7 @@
 #include "marker-table-model.hpp"
 
 #include <vector>
-#include <QDockWidget>
+#include <QWidget>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
@@ -11,7 +11,8 @@
 #include <QTableView>
 #include <QTimer>
 
-class DockWidget : public QDockWidget {
+// Content widget. obs_frontend_add_dock_by_id owns the outer QDockWidget.
+class DockWidget : public QWidget {
 	Q_OBJECT
 
 public:
