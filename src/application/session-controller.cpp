@@ -242,6 +242,10 @@ bool SessionController::trigger_quick_marker(int type_index, const std::string &
 	MemoMarker m = session_.add_marker_at_frame(
 		timeline_.relative_frames(bridge_.snapshot().total_frames), type_index, label, color, comment, paused,
 		QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs).toStdString());
+	if (!m.id) {
+		notify("Marker ID range exhausted. Save this document before starting a new one.", 5000);
+		return false;
+	}
 	journal_current_ = store_.append({{"op", "add"}, {"marker", SessionCodec::encode_marker(m)}}) &&
 			   journal_current_;
 	document_unsaved_ = true;

@@ -3,6 +3,7 @@
 #include "text-formats.hpp"
 #include <iostream>
 #include <stdexcept>
+#include <limits>
 #define CHECK(condition) do { if (!(condition)) throw std::runtime_error(#condition); } while (false)
 int main()
 {
@@ -18,6 +19,11 @@ int main()
 		}
 		CHECK(!(VideoFrameRate{0, 1}).valid());
 		CHECK(!(VideoFrameRate{60, 0}).valid());
+		const auto maximum = std::numeric_limits<uint64_t>::max();
+		CHECK(TimecodeHelper::ms_to_frame_index(maximum, {1000, 1}) == maximum);
+		CHECK(TimecodeHelper::frame_index_to_ms(maximum, {1, 1}) == maximum);
+		CHECK(TimecodeHelper::ms_to_frame_index(1728000000ULL, {60000, 1001}) == 103576424ULL);
+		CHECK(TimecodeHelper::frame_index_to_ms(103576424ULL, {60000, 1001}) == 1728000007ULL);
 		CHECK(TimecodeHelper::smpte_to_frame_index("00:01:00;00", {30000, 1001}) == 0);
 		CHECK(TimecodeHelper::smpte_to_frame_index("00:00:01:xx", {60, 1}) == 0);
 		RecordingTimeline timeline;
@@ -45,6 +51,12 @@ int main()
 		session.clear_markers();
 		auto third = session.add_marker_at_frame(0, 0, "start", "", "first", false);
 		CHECK(third.id > second.id);
+		auto exhausted = snapshot;
+		auto last = marker;
+		last.id = std::numeric_limits<uint32_t>::max();
+		exhausted.replace({"video.mkv", "id", "", {60000, 1001}, 1920, 1080}, {last});
+		CHECK(exhausted.add_marker_at_frame(60, 0, "", "", "", false).id == 0);
+		CHECK(exhausted.get_markers().size() == 1);
 		session.add_marker_at_frame(120, 0, "later", "", "x", false);
 		session.add_marker_at_frame(130, 0, "same", "", "y", false);
 		CHECK(TextFormats::generate_chapters(session).find(" / same") != std::string::npos);

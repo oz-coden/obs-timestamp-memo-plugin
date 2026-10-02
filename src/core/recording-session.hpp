@@ -32,5 +32,5 @@ public:
 private:
 	SessionMetadata metadata_;
 	std::vector<MemoMarker> markers_;
-	uint32_t next_marker_id_ = 1;
+	uint64_t next_marker_id_ = 1;
 };

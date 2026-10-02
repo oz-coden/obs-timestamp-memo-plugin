@@ -2,6 +2,11 @@
 #include <QJsonArray>
 #include <QFileInfo>
 #include <utility>
+#include <QUuid>
+#include <QDateTime>
+#include <limits>
+#include <unordered_set>
+#include <cmath>
 
 QJsonObject SessionCodec::encode_marker(const MemoMarker &m)
 {
@@ -20,25 +25,69 @@ QJsonObject SessionCodec::encode_marker(const MemoMarker &m)
 	return obj;
 }
 
-MemoMarker SessionCodec::decode_marker(const QJsonObject &obj)
+namespace {
+// Integers interoperable with JSON consumers that use IEEE-754 doubles.
+// This is a numeric precision boundary, not a limit on recording duration.
+constexpr qint64 json_integer_max = 9007199254740991LL;
+bool integer(const QJsonValue &value, qint64 minimum, qint64 maximum, qint64 &result)
 {
-	MemoMarker m;
-	qint64 raw_id = obj["id"].toInteger(0);
-	qint64 raw_ms = obj["timestamp_ms"].toInteger(0);
-	qint64 raw_frame = obj["frame_index"].toInteger(0);
+	if (!value.isDouble())
+		return false;
+	const auto n = value.toInteger(-1);
+	if (n < minimum || n > maximum || value != QJsonValue(n))
+		return false;
+	result = n;
+	return true;
+}
+bool optional_string(const QJsonObject &object, const char *key)
+{
+	return !object.contains(key) || object[key].isString();
+}
+} // namespace
 
-	m.id = (raw_id > 0 && raw_id <= 100000000) ? static_cast<uint32_t>(raw_id) : 0;
-	m.timestamp_ms = (raw_ms >= 0 && raw_ms <= 864000000) ? static_cast<uint64_t>(raw_ms) : 0;
-	m.frame_index = (raw_frame >= 0 && raw_frame <= 1000000000) ? static_cast<uint64_t>(raw_frame) : 0;
-	m.timecode_ndf = obj["timecode_ndf"].toString().toStdString();
-	m.timecode_df = obj["timecode_df"].toString().toStdString();
-	m.type_index = qBound(0, obj["type_index"].toInt(0), 3);
+bool SessionCodec::decode_marker(const QJsonObject &obj, const VideoFrameRate &fps, MemoMarker &marker)
+{
+	qint64 id = 0, ms = 0, frame = 0, type = 0;
+	if (!integer(obj["id"], 1, std::numeric_limits<uint32_t>::max(), id) ||
+	    !integer(obj["timestamp_ms"], 0, json_integer_max, ms) ||
+	    !integer(obj["frame_index"], 0, json_integer_max, frame) || !integer(obj["type_index"], 0, 3, type) ||
+	    !obj["label"].isString() || !obj["color"].isString() || !obj["comment"].isString() ||
+	    !obj["is_paused"].isBool() || !optional_string(obj, "created_at_utc") ||
+	    !optional_string(obj, "timecode_ndf") || !optional_string(obj, "timecode_df") ||
+	    static_cast<uint64_t>(frame) != TimecodeHelper::ms_to_frame_index(static_cast<uint64_t>(ms), fps))
+		return false;
+	MemoMarker m;
+	m.id = static_cast<uint32_t>(id);
+	m.timestamp_ms = static_cast<uint64_t>(ms);
+	m.frame_index = static_cast<uint64_t>(frame);
+	m.type_index = static_cast<int>(type);
 	m.label = obj["label"].toString().toStdString();
-	m.color = obj["color"].toString("#3498db").toStdString();
+	m.color = obj["color"].toString().toStdString();
 	m.comment = obj["comment"].toString().toStdString();
 	m.created_at_utc = obj["created_at_utc"].toString().toStdString();
-	m.is_paused = obj["is_paused"].toBool(false);
-	return m;
+	m.is_paused = obj["is_paused"].toBool();
+	m.timecode_ndf = TimecodeHelper::frame_index_to_smpte(m.frame_index, fps, true);
+	m.timecode_df = TimecodeHelper::frame_index_to_smpte(m.frame_index, fps);
+	marker = std::move(m);
+	return true;
+}
+bool SessionCodec::update_marker(const QJsonObject &obj, const VideoFrameRate &fps, MemoMarker &marker)
+{
+	qint64 id = 0;
+	if (!integer(obj["id"], 1, std::numeric_limits<uint32_t>::max(), id) || id != marker.id)
+		return false;
+	auto merged = encode_marker(marker);
+	bool changed = false;
+	for (auto it = merged.begin(); it != merged.end(); ++it) {
+		if (!obj.contains(it.key()))
+			continue;
+		if (it.key() == "label" || it.key() == "color" || it.key() == "comment" || it.key() == "type_index") {
+			it.value() = obj[it.key()];
+			changed = true;
+		} else if (it.value() != obj[it.key()])
+			return false; // Updates cannot silently alter marker identity/timing.
+	}
+	return changed && decode_marker(merged, fps, marker);
 }
 
 QJsonObject SessionCodec::encode(const RecordingSession &session)
@@ -73,28 +122,41 @@ QJsonObject SessionCodec::encode(const RecordingSession &session)
 
 bool SessionCodec::decode(const QJsonObject &root, RecordingSession &session)
 {
-	if (!root["session_id"].isString() || root["session_id"].toString().isEmpty() ||
+	// Absent schema is the legacy format (including pre-schema journals).
+	if ((root.contains("schema_version") && root["schema_version"] != QJsonValue("1.0.0")) ||
+	    !root["session_id"].isString() || QUuid(root["session_id"].toString()).isNull() ||
+	    !root["video_file_path"].isString() || !root["started_at_utc"].isString() ||
+	    !QDateTime::fromString(root["started_at_utc"].toString(), Qt::ISODateWithMs).isValid() ||
 	    !root["video_info"].isObject() || !root["markers"].isArray())
 		return false;
 	SessionMetadata meta;
 	meta.session_id = root["session_id"].toString().toStdString();
 	meta.video_path = root["video_file_path"].toString().toStdString();
 	meta.started_at = root["started_at_utc"].toString().toStdString();
-	auto video = root["video_info"].toObject();
-	qint64 num = video["fps_num"].toInteger(60), den = video["fps_den"].toInteger(1);
-	if (num > 0 && num <= 1000000 && den > 0 && den <= 1000000) {
-		VideoFrameRate fps{static_cast<uint32_t>(num), static_cast<uint32_t>(den)};
-		if (fps.valid())
-			meta.fps = fps;
-	}
-	qint64 w = video["width"].toInteger(1920), h = video["height"].toInteger(1080);
-	meta.width = (w > 0 && w <= 32768) ? static_cast<uint32_t>(w) : 1920;
-	meta.height = (h > 0 && h <= 32768) ? static_cast<uint32_t>(h) : 1080;
+	const auto video = root["video_info"].toObject();
+	qint64 num = 0, den = 0, width = 0, height = 0;
+	if (!integer(video["fps_num"], 1, 1000000, num) || !integer(video["fps_den"], 1, 1000000, den) ||
+	    !integer(video["width"], 1, 32768, width) || !integer(video["height"], 1, 32768, height))
+		return false;
+	meta.fps = {static_cast<uint32_t>(num), static_cast<uint32_t>(den)};
+	if (!meta.fps.valid() ||
+	    (video.contains("fps") &&
+	     (!video["fps"].isDouble() || std::abs(video["fps"].toDouble() - meta.fps.fps()) > 0.000001)) ||
+	    (video.contains("is_drop_frame") &&
+	     (!video["is_drop_frame"].isBool() || video["is_drop_frame"].toBool() != meta.fps.is_drop_frame())))
+		return false;
+	meta.width = static_cast<uint32_t>(width);
+	meta.height = static_cast<uint32_t>(height);
 	std::vector<MemoMarker> markers;
-	for (const auto value : root["markers"].toArray()) {
-		if (!value.isObject())
+	std::unordered_set<uint32_t> ids;
+	const auto array = root["markers"].toArray();
+	markers.reserve(static_cast<size_t>(array.size()));
+	for (const auto value : array) {
+		MemoMarker marker;
+		if (!value.isObject() || !decode_marker(value.toObject(), meta.fps, marker) ||
+		    !ids.insert(marker.id).second)
 			return false;
-		markers.push_back(decode_marker(value.toObject()));
+		markers.push_back(std::move(marker));
 	}
 	session.replace(std::move(meta), std::move(markers));
 	return true;

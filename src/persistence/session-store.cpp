@@ -76,6 +76,7 @@ bool SessionStore::begin(const RecordingSession &session)
 	stream_ = std::make_unique<QTextStream>(file_.get());
 	auto header = SessionCodec::encode(session)["video_info"].toObject();
 	header["op"] = "header";
+	header["schema_version"] = "1.0.0";
 	header["session_id"] = QString::fromStdString(session.session_id());
 	header["video_path"] = QString::fromStdString(session.video_path());
 	header["started_at"] = QString::fromStdString(session.started_at());
@@ -173,6 +174,7 @@ bool SessionStore::recover(const std::string &path, RecordingSession &session)
 	std::vector<MemoMarker> markers;
 	std::unordered_set<uint32_t> ids;
 	bool header = false;
+	VideoFrameRate fps;
 	while (!file.atEnd()) {
 		auto raw = file.readLine(), line = raw.trimmed();
 		if (line.isEmpty())
@@ -184,7 +186,10 @@ bool SessionStore::recover(const std::string &path, RecordingSession &session)
 			return false;
 		}
 		auto obj = doc.object();
-		auto op = obj["op"].toString(obj["type"].toString());
+		const auto operation = obj.contains("op") ? obj["op"] : obj["type"];
+		if (!operation.isString())
+			return false;
+		auto op = operation.toString();
 		if (!header && op != "header")
 			return false;
 		if (op == "header") {
@@ -195,13 +200,25 @@ bool SessionStore::recover(const std::string &path, RecordingSession &session)
 			root["video_file_path"] = obj["video_path"];
 			root["started_at_utc"] = obj["started_at"];
 			root["video_info"] = obj;
+			if (obj.contains("schema_version"))
+				root["schema_version"] = obj["schema_version"];
+			root["markers"] = QJsonArray();
+			RecordingSession checked;
+			if (!SessionCodec::decode(root, checked))
+				return false;
+			fps = checked.frame_rate();
 		} else if (op == "add" || op == "marker") {
-			auto m = SessionCodec::decode_marker(obj.contains("marker") ? obj["marker"].toObject() : obj);
-			if (!m.id || !ids.insert(m.id).second)
+			MemoMarker m;
+			if ((obj.contains("marker") && !obj["marker"].isObject()) ||
+			    !SessionCodec::decode_marker(obj.contains("marker") ? obj["marker"].toObject() : obj, fps,
+							 m) ||
+			    !ids.insert(m.id).second)
 				return false;
 			markers.push_back(m);
 		} else if (op == "update" || op == "delete") {
-			auto id = obj["id"].toInteger();
+			auto id = obj["id"].toInteger(-1);
+			if (!obj["id"].isDouble() || id <= 0 || obj["id"] != QJsonValue(id))
+				return false;
 			auto it = std::find_if(markers.begin(), markers.end(),
 					       [id](const auto &m) { return m.id == id; });
 			if (it == markers.end())
@@ -210,18 +227,17 @@ bool SessionStore::recover(const std::string &path, RecordingSession &session)
 				ids.erase(it->id);
 				markers.erase(it);
 			} else {
-				it->label = obj["label"].toString().toStdString();
-				it->color = obj["color"].toString().toStdString();
-				it->comment = obj["comment"].toString().toStdString();
-				if (obj.contains("type_index"))
-					it->type_index = qBound(0, obj["type_index"].toInt(), 3);
+				if (!SessionCodec::update_marker(obj, fps, *it))
+					return false;
 			}
 		} else if (op == "clear") {
 			markers.clear();
 			ids.clear();
-		} else if (op == "video_path")
+		} else if (op == "video_path") {
+			if (!obj["video_path"].isString())
+				return false;
 			root["video_file_path"] = obj["video_path"];
-		else
+		} else
 			return false;
 	}
 	if (file.error() != QFileDevice::NoError || !header)

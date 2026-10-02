@@ -7,6 +7,21 @@
 #include <charconv>
 #include <iomanip>
 #include <sstream>
+#include <limits>
+
+namespace {
+// Quotient/remainder scaling avoids both floating-point rounding drift and
+// intermediate overflow. FPS factors are bounded to at most 1,000,000,000.
+uint64_t rounded_scale(uint64_t value, uint64_t multiplier, uint64_t divisor)
+{
+	const auto whole = value / divisor;
+	const auto extra = ((value % divisor) * multiplier + divisor / 2) / divisor;
+	const auto limit = std::numeric_limits<uint64_t>::max();
+	if (whole > (limit - extra) / multiplier)
+		return limit;
+	return whole * multiplier + extra;
+}
+} // namespace
 
 bool VideoFrameRate::is_drop_frame() const
 {
@@ -32,22 +47,18 @@ bool TimecodeHelper::is_drop_frame_rate(uint32_t num, uint32_t den)
 
 uint64_t TimecodeHelper::ms_to_frame_index(uint64_t ms, const VideoFrameRate &fps)
 {
-	if (fps.den == 0 || fps.num == 0)
+	if (!fps.valid())
 		return 0;
 
-	double seconds = static_cast<double>(ms) / 1000.0;
-	double frames = seconds * (static_cast<double>(fps.num) / static_cast<double>(fps.den));
-	return static_cast<uint64_t>(std::llround(frames));
+	return rounded_scale(ms, fps.num, 1000ULL * fps.den);
 }
 
 uint64_t TimecodeHelper::frame_index_to_ms(uint64_t frame_index, const VideoFrameRate &fps)
 {
-	if (fps.den == 0 || fps.num == 0)
+	if (!fps.valid())
 		return 0;
 
-	double seconds =
-		(static_cast<double>(frame_index) * static_cast<double>(fps.den)) / static_cast<double>(fps.num);
-	return static_cast<uint64_t>(std::llround(seconds * 1000.0));
+	return rounded_scale(frame_index, 1000ULL * fps.den, fps.num);
 }
 
 std::string TimecodeHelper::frame_index_to_smpte(uint64_t frame_index, const VideoFrameRate &fps, bool force_ndf)

@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <unordered_set>
 #include <utility>
+#include <limits>
 void RecordingSession::replace(SessionMetadata metadata, std::vector<MemoMarker> markers)
 {
 	metadata_ = std::move(metadata);
@@ -12,9 +13,9 @@ void RecordingSession::replace(SessionMetadata metadata, std::vector<MemoMarker>
 	std::unordered_set<uint32_t> seen;
 	for (auto &m : markers_) {
 		if (!m.id || seen.count(m.id))
-			m.id = next_marker_id_;
+			m.id = static_cast<uint32_t>(next_marker_id_);
 		seen.insert(m.id);
-		next_marker_id_ = std::max(next_marker_id_, m.id + 1);
+		next_marker_id_ = std::max(next_marker_id_, static_cast<uint64_t>(m.id) + 1);
 		m.timecode_ndf = TimecodeHelper::frame_index_to_smpte(m.frame_index, metadata_.fps, true);
 		m.timecode_df = TimecodeHelper::frame_index_to_smpte(m.frame_index, metadata_.fps);
 	}
@@ -22,8 +23,10 @@ void RecordingSession::replace(SessionMetadata metadata, std::vector<MemoMarker>
 MemoMarker RecordingSession::add_marker(uint64_t ms, int type, const std::string &label, const std::string &color,
 					const std::string &comment, bool paused, std::string created_at)
 {
-	auto m = MemoMarker::create(next_marker_id_++, ms, metadata_.fps, type, label, color, comment, paused,
-				    std::move(created_at));
+	if (next_marker_id_ > std::numeric_limits<uint32_t>::max())
+		return {};
+	auto m = MemoMarker::create(static_cast<uint32_t>(next_marker_id_++), ms, metadata_.fps, type, label, color,
+				    comment, paused, std::move(created_at));
 	markers_.push_back(m);
 	return m;
 }
@@ -33,6 +36,8 @@ MemoMarker RecordingSession::add_marker_at_frame(uint64_t frame, int type, const
 {
 	auto m = add_marker(TimecodeHelper::frame_index_to_ms(frame, metadata_.fps), type, label, color, comment,
 			    paused, std::move(created_at));
+	if (!m.id)
+		return m;
 	m.frame_index = frame;
 	m.timecode_ndf = TimecodeHelper::frame_index_to_smpte(frame, metadata_.fps, true);
 	m.timecode_df = TimecodeHelper::frame_index_to_smpte(frame, metadata_.fps);

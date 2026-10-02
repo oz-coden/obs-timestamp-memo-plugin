@@ -3,7 +3,8 @@
 #include <QJsonObject>
 namespace SessionCodec {
 QJsonObject encode_marker(const MemoMarker &marker);
-MemoMarker decode_marker(const QJsonObject &object);
+bool decode_marker(const QJsonObject &object, const VideoFrameRate &fps, MemoMarker &marker);
+bool update_marker(const QJsonObject &object, const VideoFrameRate &fps, MemoMarker &marker);
 QJsonObject encode(const RecordingSession &session);
 bool decode(const QJsonObject &object, RecordingSession &session);
 } // namespace SessionCodec

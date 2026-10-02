@@ -11,6 +11,8 @@
 #include <QDir>
 #include <QJsonDocument>
 #include <QUuid>
+#include <QJsonArray>
+#include <limits>
 #include <iostream>
 #include <stdexcept>
 #define CHECK(condition) do { if (!(condition)) throw std::runtime_error(#condition); } while (false)
@@ -272,6 +274,151 @@ static void recovery_collision_protection(const QString &dir)
 		}
 	}
 }
+static void codec_validation(const QString &dir)
+{
+	RecordingSession source;
+	source.replace({"video.mkv",
+			QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString(),
+			"2026-10-02T00:00:00.000Z",
+			{60000, 1001},
+			1920,
+			1080});
+	for (const auto ms : {863999999ULL, 864000000ULL, 864000001ULL, 1728000000ULL}) {
+		source.clear_markers();
+		source.add_marker(ms, 0, "label", "#ffffff", "comment", false);
+		RecordingSession decoded;
+		CHECK(SessionCodec::decode(SessionCodec::encode(source), decoded));
+		CHECK(decoded.get_markers().front().timestamp_ms == ms);
+	}
+	const auto valid = SessionCodec::encode(source);
+	RecordingSession decoded;
+	CHECK(SessionCodec::decode(valid, decoded));
+	auto legacy = valid;
+	legacy.remove("schema_version");
+	CHECK(SessionCodec::decode(legacy, decoded));
+	const auto before = SessionCodec::encode(decoded);
+	auto reject = [&](const QJsonObject &bad) {
+		CHECK(!SessionCodec::decode(bad, decoded));
+		CHECK(SessionCodec::encode(decoded) == before);
+	};
+	for (const auto key : {"session_id", "video_file_path", "started_at_utc", "video_info", "markers"}) {
+		auto bad = valid;
+		bad.remove(key);
+		reject(bad);
+		bad = valid;
+		bad[key] = false;
+		reject(bad);
+	}
+	for (const auto schema : {QJsonValue("2.0.0"), QJsonValue(1), QJsonValue("")}) {
+		auto bad = valid;
+		bad["schema_version"] = schema;
+		reject(bad);
+	}
+	auto bad_id = valid;
+	bad_id["session_id"] = "not-a-session-id";
+	reject(bad_id);
+	for (const auto key :
+	     {"id", "timestamp_ms", "frame_index", "type_index", "label", "color", "comment", "is_paused"}) {
+		for (const auto value : {QJsonValue(), QJsonValue(QJsonArray{})}) {
+			auto bad = valid;
+			auto marker = bad["markers"].toArray().first().toObject();
+			marker[key] = value;
+			bad["markers"] = QJsonArray{marker};
+			reject(bad);
+		}
+	}
+	for (const auto key : {"timestamp_ms", "frame_index", "id", "type_index"}) {
+		for (const auto value :
+		     {QJsonValue(-1), QJsonValue(0.5), QJsonValue(std::numeric_limits<qint64>::max())}) {
+			auto bad = valid;
+			auto marker = bad["markers"].toArray().first().toObject();
+			marker[key] = value;
+			bad["markers"] = QJsonArray{marker};
+			reject(bad);
+		}
+	}
+	for (const auto key : {"fps_num", "fps_den", "width", "height"}) {
+		for (const auto value :
+		     {QJsonValue(), QJsonValue("60"), QJsonValue(0), QJsonValue(-1), QJsonValue(0.5)}) {
+			auto bad = valid;
+			auto video = bad["video_info"].toObject();
+			video[key] = value;
+			bad["video_info"] = video;
+			reject(bad);
+		}
+	}
+	auto bad = valid;
+	auto marker = bad["markers"].toArray().first().toObject();
+	marker["frame_index"] = 0;
+	bad["markers"] = QJsonArray{marker};
+	reject(bad);
+	bad["markers"] = QJsonArray{valid["markers"].toArray().first(), valid["markers"].toArray().first()};
+	reject(bad);
+	// The exact JSON integer boundary is supported, not a duration limit.
+	RecordingSession boundary;
+	boundary.replace({"video.mkv", source.session_id(), source.started_at(), {1, 1}, 1920, 1080});
+	boundary.add_marker(9007199254740991ULL, 0, "", "", "", false);
+	CHECK(SessionCodec::decode(SessionCodec::encode(boundary), decoded));
+	CHECK(decoded.get_markers().front().timestamp_ms == 9007199254740991ULL);
+	auto too_large = SessionCodec::encode(boundary);
+	auto large_marker = too_large["markers"].toArray().first().toObject();
+	large_marker["timestamp_ms"] = static_cast<qint64>(9007199254740992LL);
+	too_large["markers"] = QJsonArray{large_marker};
+	CHECK(!SessionCodec::decode(too_large, decoded));
+	// Legacy journals have no schema; partial updates retain omitted fields.
+	SessionStore journal;
+	source.set_video_path((dir + "/codec.mkv").toStdString());
+	CHECK(journal.begin(source));
+	const auto item = source.get_markers().front();
+	CHECK(journal.append({{"op", "add"}, {"marker", SessionCodec::encode_marker(item)}}));
+	CHECK(journal.finish(source, false));
+	QFile input(QString::fromStdString(journal.cache_path()));
+	CHECK(input.open(QIODevice::ReadOnly));
+	const auto bytes = input.readAll();
+	input.close();
+	const auto first_line = bytes.indexOf('\n');
+	auto header = QJsonDocument::fromJson(bytes.left(first_line)).object();
+	header.remove("schema_version");
+	auto legacy_bytes = QJsonDocument(header).toJson(QJsonDocument::Compact) + bytes.mid(first_line);
+	const auto legacy_path = dir + "/legacy-codec.tmp.jsonl";
+	QFile legacy_file(legacy_path);
+	CHECK(legacy_file.open(QIODevice::WriteOnly));
+	CHECK(legacy_file.write(legacy_bytes) == legacy_bytes.size());
+	legacy_file.close();
+	SessionStore legacy_reader;
+	CHECK(legacy_reader.recover(legacy_path.toStdString(), decoded));
+	header["schema_version"] = "2.0.0";
+	legacy_bytes = QJsonDocument(header).toJson(QJsonDocument::Compact) + bytes.mid(first_line);
+	CHECK(legacy_file.open(QIODevice::WriteOnly));
+	CHECK(legacy_file.write(legacy_bytes) == legacy_bytes.size());
+	legacy_file.close();
+	const auto legacy_before = SessionCodec::encode(decoded);
+	CHECK(!legacy_reader.recover(legacy_path.toStdString(), decoded));
+	CHECK(SessionCodec::encode(decoded) == legacy_before);
+	auto recover = [&](const QJsonObject &op, bool success) {
+		const auto path = dir + "/codec-test.tmp.jsonl";
+		QFile output(path);
+		CHECK(output.open(QIODevice::WriteOnly));
+		const auto data = bytes + QJsonDocument(op).toJson(QJsonDocument::Compact) + "\n";
+		CHECK(output.write(data) == data.size());
+		output.close();
+		SessionStore reader;
+		const auto prior = SessionCodec::encode(decoded);
+		CHECK(reader.recover(path.toStdString(), decoded) == success);
+		if (!success)
+			CHECK(SessionCodec::encode(decoded) == prior);
+	};
+	recover({{"op", "update"}, {"id", static_cast<qint64>(item.id)}, {"comment", "partial"}}, true);
+	CHECK(decoded.get_markers().front().label == item.label);
+	CHECK(decoded.get_markers().front().color == item.color);
+	CHECK(decoded.get_markers().front().comment == "partial");
+	recover({{"op", "update"}, {"id", static_cast<qint64>(item.id)}, {"comment", false}}, false);
+	recover({{"op", "update"}, {"id", static_cast<qint64>(item.id)}}, false);
+	recover({{"op", "delete"}, {"id", "1"}}, false);
+	recover({{"op", "video_path"}}, false);
+	recover({{"op", "unsupported"}}, false);
+	recover({{"op", 1}}, false);
+}
 int main(int argc, char **argv)
 {
 	QCoreApplication app(argc, argv);
@@ -361,6 +508,7 @@ int main(int argc, char **argv)
 		journal_failure_json_success(dir.path());
 		durable_unsaved_recovery(dir.path());
 		recovery_collision_protection(dir.path());
+		codec_validation(dir.path());
 		// A failed settings write must not publish a partly edited live value.
 		QFile blocked(dir.path() + "/blocked");
 		CHECK(blocked.open(QIODevice::WriteOnly));
