@@ -148,6 +148,13 @@ jobs:
       - name: Run domain, application and regression tests
         run: python3 .github/scripts/run-tests.py --config ${{ needs.check-event.outputs.config }}
 
+      - name: Diagnose macOS regression failure
+        if: failure()
+        run: |
+          if [[ -x build_tests/regressions ]]; then
+            QT_QPA_PLATFORM=minimal lldb --batch -o run -o 'thread backtrace all' -- build_tests/regressions
+          fi
+
       - name: Package Plugin 📀
         uses: ./.github/actions/package-plugin
         with:
