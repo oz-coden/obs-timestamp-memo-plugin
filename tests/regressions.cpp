@@ -20,6 +20,7 @@
 #include <QClipboard>
 #include <QDir>
 #include <QFile>
+#include <QFileDialog>
 #include <QJsonDocument>
 #include <QKeyEvent>
 #include <QMenu>
@@ -254,6 +255,84 @@ static void model_reentrancy()
 	std::cout << "PASS model signal reentrancy\n";
 }
 
+static void export_refresh(const QString &dir, QMainWindow &window)
+{
+	FakeObs::reset(&window, dir + "/fallback");
+	CHECK(obs_module_load());
+	auto *content = qobject_cast<DockWidget *>(FakeObs::dock()->widget());
+	auto &controller = content->controller();
+	FakeObs::start(dir + "/export-refresh.mkv", 60);
+	CHECK(controller.trigger_quick_marker(0, "original"));
+	CHECK(QMetaObject::invokeMethod(content, "onExportClicked", Qt::DirectConnection));
+	auto *dialog = content->findChild<ExportDialog *>();
+	CHECK(dialog);
+	const auto id = controller.session().get_markers().front().id;
+	CHECK(controller.update_marker_data(id, "label", "", "refreshed"));
+	CHECK(QMetaObject::invokeMethod(content, "onExportClicked", Qt::DirectConnection));
+	CHECK(content->findChildren<ExportDialog *>().size() == 1);
+	dialog->findChild<QButtonGroup *>()->button(5)->setChecked(true);
+	CHECK(QMetaObject::invokeMethod(dialog, "onCopyClicked", Qt::DirectConnection));
+	CHECK(QApplication::clipboard()->text().contains("refreshed"));
+	// Drive real non-native file dialogs, changing the document inside their
+	// nested event loops. Each write must retain its operation-start snapshot.
+	auto save_during = [&](const QString &path, const auto &mutation) {
+		QTimer picker;
+		picker.setInterval(5);
+		bool handled = false;
+		QObject::connect(&picker, &QTimer::timeout, &picker, [&]() {
+			auto *file_dialog = qobject_cast<QFileDialog *>(QApplication::activeModalWidget());
+			if (!file_dialog)
+				return;
+			picker.stop();
+			mutation();
+			file_dialog->selectFile(path);
+			// selectFile does not replace a focused filename editor once visible.
+			auto *filename = file_dialog->findChild<QLineEdit *>("fileNameEdit");
+			CHECK(filename);
+			filename->setText(path);
+			CHECK(file_dialog->selectedFiles().first() == path);
+			handled = QMetaObject::invokeMethod(file_dialog, "accept", Qt::DirectConnection);
+		});
+		const auto expected = SessionCodec::encode(controller.session());
+		dialog->findChild<QButtonGroup *>()->button(0)->setChecked(true);
+		picker.start();
+		CHECK(QMetaObject::invokeMethod(dialog, "onExportClicked", Qt::DirectConnection));
+		CHECK(handled);
+		CHECK(QJsonDocument::fromJson(read_file(path)).object() == expected);
+	};
+	save_during(dir + "/export-during-edit.json", [&]() {
+		CHECK(controller.update_marker_data(id, "label", "", "edited during picker"));
+		CHECK(QMetaObject::invokeMethod(content, "onExportClicked", Qt::DirectConnection));
+	});
+	save_during(dir + "/export-during-split.json", [&]() {
+		FakeObs::split(dir + "/export-split.mkv", 60);
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+		CHECK(controller.trigger_quick_marker(0, "new segment"));
+		CHECK(QMetaObject::invokeMethod(content, "onExportClicked", Qt::DirectConnection));
+	});
+	FakeObs::stop();
+	CHECK(controller.load_from_json((dir + "/export-during-edit.json").toStdString()));
+	CHECK(QMetaObject::invokeMethod(content, "onExportClicked", Qt::DirectConnection));
+	auto revision = controller.session();
+	CHECK(revision.update_marker(id, "label", "#ffffff", "same UUID, another revision"));
+	SessionStore writer;
+	CHECK(writer.save(revision, (dir + "/export-revision.json").toStdString()));
+	const auto previous_revision = controller.document_revision();
+	CHECK(controller.load_from_json((dir + "/export-revision.json").toStdString()));
+	CHECK(controller.document_revision() > previous_revision);
+	CHECK(QMetaObject::invokeMethod(content, "onExportClicked", Qt::DirectConnection));
+	dialog->findChild<QButtonGroup *>()->button(5)->setChecked(true);
+	CHECK(QMetaObject::invokeMethod(dialog, "onCopyClicked", Qt::DirectConnection));
+	CHECK(QApplication::clipboard()->text().contains("same UUID, another revision"));
+	QPointer<ExportDialog> old_dialog(dialog);
+	dialog->close();
+	QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+	CHECK(old_dialog.isNull());
+	CHECK(QMetaObject::invokeMethod(content, "onExportClicked", Qt::DirectConnection));
+	CHECK(content->findChildren<ExportDialog *>().size() == 1);
+	obs_module_unload();
+}
+
 static void lifecycle_and_ui(const QString &dir, QMainWindow &window)
 {
 	FakeObs::reset(&window, dir + "/fallback");
@@ -382,6 +461,7 @@ static void lifecycle_and_ui(const QString &dir, QMainWindow &window)
 
 int main(int argc, char **argv)
 {
+	QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
 	QApplication app(argc, argv);
 	// Native macOS styles expect Cocoa window handles; minimal has synthetic IDs.
 	// A portable style keeps headless tests independent of the host window system.
@@ -402,6 +482,7 @@ int main(int argc, char **argv)
 		journaling(dir.path());
 		exports(dir.path());
 		model_reentrancy();
+		export_refresh(dir.path(), window);
 		lifecycle_and_ui(dir.path(), window);
 		std::cout << "All regression groups passed\n";
 		return 0;

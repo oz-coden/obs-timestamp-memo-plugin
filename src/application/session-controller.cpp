@@ -249,6 +249,7 @@ bool SessionController::trigger_quick_marker(int type_index, const std::string &
 	journal_current_ = store_.append({{"op", "add"}, {"marker", SessionCodec::encode_marker(m)}}) &&
 			   journal_current_;
 	document_unsaved_ = true;
+	++document_revision_;
 	int row = static_cast<int>(session_.get_markers().size()) - 1;
 
 	std::string tc = m.active_timecode(session_.frame_rate());
@@ -300,6 +301,7 @@ bool SessionController::apply_marker_update(const MemoMarker &candidate)
 						    candidate.type_index))
 				return false;
 			journal_update(candidate.id);
+			++document_revision_;
 			persist_edits();
 			emit markerUpdated(candidate, static_cast<int>(row));
 			return true;
@@ -313,6 +315,7 @@ bool SessionController::delete_marker(uint32_t id)
 	for (size_t i = 0; i < markers.size(); ++i) {
 		if (markers[i].id == id) {
 			session_.delete_marker(id);
+			++document_revision_;
 			if (timeline_.active())
 				journal_current_ = store_.append({{"op", "delete"}, {"id", static_cast<qint64>(id)}}) &&
 						   journal_current_;
@@ -327,6 +330,7 @@ bool SessionController::delete_marker(uint32_t id)
 void SessionController::clear_markers()
 {
 	session_.clear_markers();
+	++document_revision_;
 	if (timeline_.active())
 		journal_current_ = store_.append({{"op", "clear"}}) && journal_current_;
 	persist_edits();
@@ -339,6 +343,7 @@ bool SessionController::load_from_json(const std::string &path)
 		return false;
 
 	if (store_.load(path, session_)) {
+		++document_revision_;
 		history_path_ = path;
 		recovered_ = false;
 		emit markersReset(session_.get_markers(), session_.frame_rate());
@@ -353,6 +358,7 @@ bool SessionController::recover_from_cache(const std::string &cache_path)
 		return false;
 
 	if (store_.recover(cache_path, session_)) {
+		++document_revision_;
 		history_path_ = cache_path;
 		recovered_ = true;
 		document_unsaved_ = !session_.get_markers().empty();
@@ -435,6 +441,7 @@ void SessionController::check_recording_file_changed()
 
 	if (session_.video_path().empty()) {
 		session_.set_video_path(current_path);
+		++document_revision_;
 		journal_current_ =
 			store_.append({{"op", "video_path"}, {"video_path", QString::fromStdString(current_path)}}) &&
 			journal_current_;
@@ -488,6 +495,7 @@ void SessionController::onRecordingStopped()
 		video_path = bridge_.snapshot().path;
 		if (!video_path.empty()) {
 			session_.set_video_path(video_path);
+			++document_revision_;
 			journal_current_ = store_.append({{"op", "video_path"},
 							  {"video_path", QString::fromStdString(video_path)}}) &&
 					   journal_current_;
@@ -555,6 +563,7 @@ void SessionController::start_document(const std::string &path, const VideoFrame
 			  QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs).toStdString(), fps, width,
 			  height});
 	journal_current_ = store_.begin(session_);
+	++document_revision_;
 	document_unsaved_ = false;
 }
 void SessionController::journal_update(uint32_t id)

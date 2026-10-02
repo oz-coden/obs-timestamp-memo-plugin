@@ -16,14 +16,20 @@
 #include <QPointer>
 
 ExportDialog::ExportDialog(const RecordingSession &session, const ExporterRegistry &exporters, QWidget *parent)
-	: QDialog(parent),
-	  session_(session)
+	: QDialog(parent)
 {
-	setWindowTitle("Export Markers — " + QFileInfo(QString::fromStdString(session.video_path())).fileName());
+	set_snapshot(session);
 	setMinimumWidth(380);
 
 	exporters_ = exporters.get_all();
 	setup_ui();
+}
+
+void ExportDialog::set_snapshot(const RecordingSession &session)
+{
+	session_ = std::make_shared<const RecordingSession>(session);
+	setWindowTitle("Export Markers — " + QFileInfo(QString::fromStdString(session.video_path())).fileName() +
+		       QString(" (%1 markers)").arg(session.get_markers().size()));
 }
 
 void ExportDialog::setup_ui()
@@ -100,7 +106,8 @@ void ExportDialog::onCopyClicked()
 		return;
 	}
 
-	std::string text = exporter->export_to_string(session_);
+	const auto snapshot = session_;
+	std::string text = exporter->export_to_string(*snapshot);
 	if (!QGuiApplication::clipboard()) {
 		QMessageBox::critical(this, "Copy Failed", "The system clipboard is unavailable.");
 		return;
@@ -116,13 +123,16 @@ void ExportDialog::onExportClicked()
 		return;
 	}
 
-	const auto &exporter = exporters_[selected_id];
+	// A nested file dialog can process document edits, splits and refreshes.
+	// Keep this operation's immutable snapshot and exporter alive independently.
+	const auto snapshot = session_;
+	const auto exporter = exporters_[selected_id];
 	QString ext = QString::fromStdString(exporter->get_file_extension());
 	QString filter = QString("%1 (*.%2)").arg(QString::fromStdString(exporter->get_format_name()), ext);
 
 	QString default_name = "markers." + ext;
-	if (!session_.video_path().empty()) {
-		QFileInfo fi(QString::fromStdString(session_.video_path()));
+	if (!snapshot->video_path().empty()) {
+		QFileInfo fi(QString::fromStdString(snapshot->video_path()));
 		default_name = fi.dir().filePath(fi.completeBaseName() + "." + ext);
 	}
 
@@ -131,8 +141,9 @@ void ExportDialog::onExportClicked()
 		return;
 	}
 
-	if (exporter->export_to_file(session_, save_path.toStdString())) {
-		accept();
+	if (exporter->export_to_file(*snapshot, save_path.toStdString())) {
+		if (session_ == snapshot)
+			accept();
 	} else {
 		QMessageBox::critical(this, "Export Failed", QString("Failed to write to:\n%1").arg(save_path));
 	}

@@ -15,7 +15,7 @@ class ExportDialog : public QDialog {
 	Q_OBJECT
 
 public:
-	const std::string &session_id() const { return session_.session_id(); }
+	void set_snapshot(const RecordingSession &session);
 	explicit ExportDialog(const RecordingSession &session, const ExporterRegistry &exporters,
 			      QWidget *parent = nullptr);
 
@@ -27,7 +27,7 @@ private slots:
 private:
 	void setup_ui();
 
-	const RecordingSession session_;
+	std::shared_ptr<const RecordingSession> session_;
 	QButtonGroup *btn_group_ = nullptr;
 	QPushButton *btn_copy_ = nullptr;
 	std::vector<std::shared_ptr<IExporter>> exporters_;

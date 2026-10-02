@@ -265,20 +265,20 @@ void DockWidget::onUnsavedClicked()
 		return;
 	}
 	if (action->objectName() != "SaveUnsaved") {
-		auto *dialog = new ExportDialog(snapshot, exporters_, this);
-		dialog->setAttribute(Qt::WA_DeleteOnClose);
-		dialog->show();
+		show_export(snapshot);
 		return;
 	}
-	const auto session_id = snapshot.session_id();
+	const auto revision = controller_.document_revision();
 	QFileInfo video(QString::fromStdString(snapshot.video_path()));
-	const auto path = QFileDialog::getSaveFileName(this, "Save Unsaved JSON",
-						       video.dir().filePath(video.completeBaseName() + ".json"),
-						       "JSON Files (*.json)");
+	const auto path = QFileDialog::getSaveFileName(
+		this, "Save Unsaved JSON",
+		snapshot.video_path().empty() ? "markers.json"
+					      : video.dir().filePath(video.completeBaseName() + ".json"),
+		"JSON Files (*.json)");
 	if (!guard || path.isEmpty())
 		return;
 	// The current document can change while the native file dialog is open.
-	if (id == 0 && controller_.session().session_id() != session_id) {
+	if (id == 0 && controller_.document_revision() != revision) {
 		QMessageBox::warning(this, "Document Changed",
 				     "The current document changed. Choose the unsaved document again.");
 		return;
@@ -374,14 +374,16 @@ void DockWidget::onExportClicked()
 		return;
 	}
 
-	if (export_dialog_ && export_dialog_->session_id() != session.session_id()) {
-		export_dialog_->close();
-		export_dialog_.clear();
-	}
+	show_export(session);
+}
+
+void DockWidget::show_export(const RecordingSession &session)
+{
 	if (!export_dialog_) {
 		export_dialog_ = new ExportDialog(session, exporters_, this);
 		export_dialog_->setAttribute(Qt::WA_DeleteOnClose);
-	}
+	} else
+		export_dialog_->set_snapshot(session);
 	export_dialog_->show();
 	export_dialog_->raise();
 	export_dialog_->activateWindow();

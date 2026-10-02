@@ -18,6 +18,7 @@ class PluginConfig;
 class ExporterRegistry;
 class ExportDialog;
 class SettingsDialog;
+class RecordingSession;
 
 class DockWidget : public QWidget {
 	Q_OBJECT
@@ -66,6 +67,7 @@ private:
 	QPointer<SettingsDialog> settings_dialog_;
 	void setup_ui();
 	void update_status_ui();
+	void show_export(const RecordingSession &session);
 
 	QLabel *lbl_status_ = nullptr;
 	QLabel *lbl_video_name_ = nullptr;

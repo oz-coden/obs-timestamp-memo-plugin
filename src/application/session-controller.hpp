@@ -40,6 +40,7 @@ public:
 
 	// Session inspection
 	const RecordingSession &session() const { return session_; }
+	uint64_t document_revision() const { return document_revision_; }
 	bool is_recording() const;
 	bool is_paused() const;
 	uint64_t current_record_ms() const;
@@ -96,6 +97,7 @@ private:
 	void check_journal();
 
 	RecordingSession session_;
+	uint64_t document_revision_ = 0;
 	RecordingTimeline timeline_;
 	RecordingGateway &bridge_;
 	PluginConfig &config_;
