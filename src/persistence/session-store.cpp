@@ -24,7 +24,11 @@ void SessionStore::acknowledge_saved(const std::string &path)
 	if (journaling())
 		return;
 	source_path_ = path;
-	remove_cache();
+	if (QFileInfo(QString::fromStdString(path)).absoluteFilePath() ==
+	    QFileInfo(QString::fromStdString(cache_path_)).absoluteFilePath())
+		cache_path_.clear();
+	else
+		remove_cache();
 }
 std::vector<std::string> SessionStore::recovery_copies() const
 {
@@ -109,6 +113,20 @@ bool SessionStore::save(const RecordingSession &session, const std::string &targ
 		path = video.dir().filePath(video.completeBaseName() + ".json").toStdString();
 	}
 	QFileInfo info(QString::fromStdString(path));
+	// Basenames are not document identities. Never overwrite another session
+	// (or an unreadable document) during an automatic save/recovery update.
+	if (info.exists()) {
+		QFile existing(info.filePath());
+		if (!existing.open(QIODevice::ReadOnly))
+			return false;
+		const auto bytes = existing.readAll();
+		const auto json = QJsonDocument::fromJson(bytes);
+		RecordingSession previous;
+		if (existing.error() != QFileDevice::NoError || !json.isObject() ||
+		    !SessionCodec::decode(json.object(), previous) || previous.session_id() != session.session_id() ||
+		    previous.started_at() != session.started_at())
+			return false;
+	}
 	if (!info.dir().mkpath("."))
 		return false;
 	QSaveFile file(QString::fromStdString(path));

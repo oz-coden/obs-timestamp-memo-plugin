@@ -10,6 +10,7 @@
 #include <QFile>
 #include <QDir>
 #include <QJsonDocument>
+#include <QUuid>
 #include <iostream>
 #include <stdexcept>
 #define CHECK(condition) do { if (!(condition)) throw std::runtime_error(#condition); } while (false)
@@ -72,6 +73,7 @@ static void unsaved_protection(SessionController &controller, FakeGateway &gatew
 	gateway.stop();
 	CHECK(!controller.has_unsaved_current());
 	// Journal failure with a subsequently writable JSON destination is safe.
+	gateway.value.path = (dir + "/next-recording.mkv").toStdString();
 	gateway.start();
 	CHECK(controller.trigger_quick_marker(0));
 	gateway.stop();
@@ -161,6 +163,7 @@ static void journal_failure_json_success(const QString &dir)
 	gateway.stop();
 	CHECK(!controller.has_unsaved_current());
 	CHECK(QFile::exists(blocked.fileName() + "/video.json"));
+	gateway.value.path = (blocked.fileName() + "/next.mkv").toStdString();
 	gateway.start();
 	CHECK(controller.unsaved_documents().empty());
 	gateway.stop();
@@ -200,6 +203,74 @@ static void durable_unsaved_recovery(const QString &dir)
 	CHECK(restored.get_markers().front().comment == "survives runtime destruction");
 	CHECK(controller.save_unsaved_document(id, (dir + "/durable-saved.json").toStdString()));
 	CHECK(store.recovery_copies().empty());
+}
+static void recovery_collision_protection(const QString &dir)
+{
+	for (const auto &kind : {"same", "different", "corrupt", "missing", "unresolved"}) {
+		const auto folder = dir + "/collision-" + kind;
+		CHECK(QDir().mkpath(folder));
+		RecordingSession original;
+		original.replace({kind == std::string("unresolved") ? "" : (folder + "/video.mkv").toStdString(),
+				  QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString(),
+				  "2026-10-02T00:00:00.000Z",
+				  {60, 1},
+				  1920,
+				  1080});
+		const auto marker = original.add_marker_at_frame(60, 0, "label", "#ffffff", "cached", false, "");
+		SessionStore journal(folder.toStdString());
+		CHECK(journal.begin(original));
+		CHECK(journal.append({{"op", "add"}, {"marker", SessionCodec::encode_marker(marker)}}));
+		CHECK(journal.finish(original, false));
+		const auto cache = journal.cache_path();
+		const auto target = folder + "/video.json";
+		if (kind == std::string("same") || kind == std::string("different")) {
+			auto existing = original;
+			if (kind == std::string("different")) {
+				auto meta = SessionMetadata{
+					original.video_path(),
+					QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString(),
+					original.started_at(),
+					original.frame_rate(),
+					original.width(),
+					original.height()};
+				existing.replace(meta, original.get_markers());
+			}
+			SessionStore writer;
+			CHECK(writer.save(existing, target.toStdString()));
+		} else if (kind == std::string("corrupt")) {
+			QFile bad(target);
+			CHECK(bad.open(QIODevice::WriteOnly));
+			CHECK(bad.write("{broken") == 7);
+		}
+		QFile before(target);
+		const auto bytes = before.open(QIODevice::ReadOnly) ? before.readAll() : QByteArray();
+		before.close();
+		PluginConfig config(QSettings::IniFormat);
+		SessionStore store;
+		ExporterRegistry exporters;
+		FakeGateway gateway;
+		SessionController controller(gateway, config, store, exporters);
+		controller.initialize();
+		CHECK(controller.recover_from_cache(cache));
+		CHECK(controller.update_marker_data(marker.id, "label", "", "edited"));
+		const bool safe = kind == std::string("same") || kind == std::string("missing");
+		CHECK(controller.has_unsaved_current() == !safe);
+		CHECK(QFile::exists(QString::fromStdString(cache)) == !safe);
+		if (!safe && kind != std::string("unresolved")) {
+			QFile after(target);
+			CHECK(after.open(QIODevice::ReadOnly) && after.readAll() == bytes);
+		}
+		if (!safe) {
+			// Use a file as a directory to exercise a guaranteed write failure.
+			QFile blocked(folder + "/blocked");
+			CHECK(blocked.open(QIODevice::WriteOnly));
+			blocked.close();
+			CHECK(!controller.save_current_document((blocked.fileName() + "/save.json").toStdString()));
+			CHECK(QFile::exists(QString::fromStdString(cache)));
+			CHECK(controller.save_current_document((folder + "/rescued.json").toStdString()));
+			CHECK(!QFile::exists(QString::fromStdString(cache)));
+		}
+	}
 }
 int main(int argc, char **argv)
 {
@@ -289,6 +360,7 @@ int main(int argc, char **argv)
 		bounded_unsaved_protection(dir.path());
 		journal_failure_json_success(dir.path());
 		durable_unsaved_recovery(dir.path());
+		recovery_collision_protection(dir.path());
 		// A failed settings write must not publish a partly edited live value.
 		QFile blocked(dir.path() + "/blocked");
 		CHECK(blocked.open(QIODevice::WriteOnly));
