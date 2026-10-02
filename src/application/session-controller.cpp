@@ -226,7 +226,7 @@ bool SessionController::trigger_quick_marker(int type_index, const std::string &
 		return false;
 	}
 
-	check_recording_file_changed();
+	const auto capture = poll_recording_state();
 	if (!timeline_.active() || capture_blocked_)
 		return false;
 
@@ -240,7 +240,7 @@ bool SessionController::trigger_quick_marker(int type_index, const std::string &
 	bool paused = is_paused();
 
 	MemoMarker m = session_.add_marker_at_frame(
-		timeline_.relative_frames(bridge_.snapshot().total_frames), type_index, label, color, comment, paused,
+		timeline_.relative_frames(capture.total_frames), type_index, label, color, comment, paused,
 		QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs).toStdString());
 	if (!m.id) {
 		notify("Marker ID range exhausted. Save this document before starting a new one.", 5000);
@@ -270,8 +270,9 @@ bool SessionController::update_marker_type(uint32_t id, int type)
 {
 	if (type < 0 || type >= 4)
 		type = 0;
-	for (auto candidate : session_.get_markers())
-		if (candidate.id == id) {
+	for (const auto &marker : session_.get_markers())
+		if (marker.id == id) {
+			auto candidate = marker;
 			candidate.type_index = type;
 			candidate.label = config_.values().marker_types[type].label;
 			candidate.color = config_.values().marker_types[type].color;
@@ -282,8 +283,9 @@ bool SessionController::update_marker_type(uint32_t id, int type)
 bool SessionController::update_marker_data(uint32_t id, const std::string &label, const std::string &color,
 					   const std::string &comment)
 {
-	for (auto candidate : session_.get_markers())
-		if (candidate.id == id) {
+	for (const auto &marker : session_.get_markers())
+		if (marker.id == id) {
+			auto candidate = marker;
 			candidate.label = label;
 			candidate.comment = comment;
 			if (!color.empty())
@@ -311,7 +313,7 @@ bool SessionController::apply_marker_update(const MemoMarker &candidate)
 
 bool SessionController::delete_marker(uint32_t id)
 {
-	auto markers = session_.get_markers();
+	const auto &markers = session_.get_markers();
 	for (size_t i = 0; i < markers.size(); ++i) {
 		if (markers[i].id == id) {
 			session_.delete_marker(id);
@@ -431,23 +433,27 @@ bool SessionController::perform_auto_export(const std::string &base_video_path)
 
 void SessionController::check_recording_file_changed()
 {
-	if (!is_recording())
-		return;
+	if (is_recording())
+		poll_recording_state();
+}
+RecordingSnapshot SessionController::poll_recording_state()
+{
 	bridge_.drain_pending_events();
-
-	std::string current_path = bridge_.snapshot().path;
-	if (current_path.empty())
-		return;
-
-	if (session_.video_path().empty()) {
-		session_.set_video_path(current_path);
+	const auto capture = bridge_.snapshot();
+	if (!is_recording())
+		return capture;
+	if (!capture_blocked_ && session_.video_path().empty() && !capture.path.empty()) {
+		session_.set_video_path(capture.path);
 		++document_revision_;
 		journal_current_ =
-			store_.append({{"op", "video_path"}, {"video_path", QString::fromStdString(current_path)}}) &&
+			store_.append({{"op", "video_path"}, {"video_path", QString::fromStdString(capture.path)}}) &&
 			journal_current_;
 		check_journal();
-		emit videoPathResolved(QString::fromStdString(current_path));
+		emit videoPathResolved(QString::fromStdString(capture.path));
 	}
+	emit recordTimeChanged(TimecodeHelper::frame_index_to_ms(timeline_.relative_frames(capture.total_frames),
+								 session_.frame_rate()));
+	return capture;
 }
 
 void SessionController::onRecordingStarted()

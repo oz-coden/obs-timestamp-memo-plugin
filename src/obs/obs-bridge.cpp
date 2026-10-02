@@ -123,6 +123,8 @@ void ObsBridge::attach_recording_output()
 void ObsBridge::detach_recording_output()
 {
 	++output_generation_;
+	metadata_valid_ = false;
+	metadata_encoder_ = nullptr;
 	if (recording_output_) {
 		signal_handler_disconnect(obs_output_get_signal_handler(recording_output_), "file_changed",
 					  on_file_changed, this);
@@ -152,46 +154,32 @@ void ObsBridge::on_file_changed(void *data, calldata_t *params)
 		Qt::QueuedConnection);
 }
 
-VideoFrameRate ObsBridge::get_current_frame_rate() const
+void ObsBridge::refresh_metadata(obs_encoder_t *encoder) const
 {
-	struct obs_video_info ovi{};
-	VideoFrameRate rate{60, 1};
-	if (obs_get_video_info(&ovi) && ovi.fps_num && ovi.fps_den)
-		rate = VideoFrameRate{ovi.fps_num, ovi.fps_den};
-	auto *output = recording_output_;
-	if (output) {
-		obs_encoder_t *encoder = obs_output_get_video_encoder(output);
-		uint32_t divisor = encoder ? obs_encoder_get_frame_rate_divisor(encoder) : 1;
+	obs_video_info video{};
+	const bool have_video = obs_get_video_info(&video);
+	metadata_.fps = have_video && video.fps_num && video.fps_den ? VideoFrameRate{video.fps_num, video.fps_den}
+								     : VideoFrameRate{60, 1};
+	metadata_.width = have_video ? video.output_width : 1920;
+	metadata_.height = have_video ? video.output_height : 1080;
+	if (encoder) {
+		uint32_t divisor = obs_encoder_get_frame_rate_divisor(encoder);
 		if (divisor > 1) {
-			uint32_t common = std::gcd(rate.num, divisor);
+			const auto common = std::gcd(metadata_.fps.num, divisor);
 			divisor /= common;
-			if (rate.den <= std::numeric_limits<uint32_t>::max() / divisor) {
-				rate.num /= common;
-				rate.den *= divisor;
+			if (metadata_.fps.den <= std::numeric_limits<uint32_t>::max() / divisor) {
+				metadata_.fps.num /= common;
+				metadata_.fps.den *= divisor;
 			}
 		}
-	}
-	return rate;
-}
-
-void ObsBridge::get_video_dimension(uint32_t &width, uint32_t &height) const
-{
-	struct obs_video_info ovi;
-	if (obs_get_video_info(&ovi)) {
-		width = ovi.output_width;
-		height = ovi.output_height;
-	} else {
-		width = 1920;
-		height = 1080;
-	}
-	auto *output = recording_output_;
-	if (output) {
-		obs_encoder_t *encoder = obs_output_get_video_encoder(output);
-		if (encoder && obs_encoder_get_width(encoder) && obs_encoder_get_height(encoder)) {
-			width = obs_encoder_get_width(encoder);
-			height = obs_encoder_get_height(encoder);
+		const auto width = obs_encoder_get_width(encoder), height = obs_encoder_get_height(encoder);
+		if (width && height) {
+			metadata_.width = width;
+			metadata_.height = height;
 		}
 	}
+	metadata_encoder_ = encoder;
+	metadata_valid_ = true;
 }
 
 void ObsBridge::on_frontend_event(enum obs_frontend_event event, void *private_data)
@@ -301,8 +289,14 @@ RecordingSnapshot ObsBridge::snapshot() const
 		return value;
 	value.total_frames = get_current_record_frames();
 	value.path = get_current_record_file_path();
-	value.fps = get_current_frame_rate();
-	get_video_dimension(value.width, value.height);
+	// Encoder identity is cheap to check; fixed metadata is refreshed only
+	// for a new output/encoder. No output is acquired from this polling path.
+	auto *encoder = obs_output_get_video_encoder(recording_output_);
+	if (!metadata_valid_ || encoder != metadata_encoder_)
+		refresh_metadata(encoder);
+	value.fps = metadata_.fps;
+	value.width = metadata_.width;
+	value.height = metadata_.height;
 	return value;
 }
 void ObsBridge::drain_pending_events()

@@ -1,4 +1,5 @@
 #include "obs-stubs.hpp"
+#include "obs-bridge.hpp"
 #include "dock-widget.hpp"
 #include "settings-dialog.hpp"
 #include "recording-session.hpp"
@@ -333,6 +334,38 @@ static void export_refresh(const QString &dir, QMainWindow &window)
 	obs_module_unload();
 }
 
+static void metadata_caching(const QString &dir, QMainWindow &window)
+{
+	FakeObs::reset(&window, dir + "/fallback");
+	FakeObs::set_rate(60000, 1001);
+	FakeObs::set_encoder(1, 1920, 1080);
+	ObsBridge bridge;
+	bridge.initialize();
+	CHECK(FakeObs::recording_output_queries() == 0);
+	CHECK(FakeObs::metadata_queries() == 0);
+	FakeObs::start(dir + "/metadata.mkv", 60);
+	const auto first = bridge.snapshot();
+	CHECK(first.fps.num == 60000 && first.width == 1920);
+	const auto queries = FakeObs::metadata_queries();
+	FakeObs::set_frames(120);
+	CHECK(bridge.snapshot().total_frames == 120);
+	CHECK(bridge.snapshot().fps.num == first.fps.num);
+	CHECK(FakeObs::metadata_queries() == queries);
+	FakeObs::replace_encoder(2, 1280, 720);
+	const auto changed = bridge.snapshot();
+	CHECK(changed.fps.num == 30000 && changed.width == 1280 && changed.height == 720);
+	CHECK(FakeObs::metadata_queries() > queries);
+	FakeObs::stop();
+	FakeObs::set_encoder(1, 640, 480);
+	FakeObs::start(dir + "/metadata-next.mkv");
+	CHECK(bridge.snapshot().width == 640 && bridge.snapshot().fps.num == 60000);
+	FakeObs::stop();
+	bridge.shutdown();
+	const auto after = FakeObs::metadata_queries();
+	CHECK(!bridge.snapshot().recording && FakeObs::metadata_queries() == after);
+	CHECK(FakeObs::output_refs() == 0);
+}
+
 static void lifecycle_and_ui(const QString &dir, QMainWindow &window)
 {
 	FakeObs::reset(&window, dir + "/fallback");
@@ -483,6 +516,7 @@ int main(int argc, char **argv)
 		exports(dir.path());
 		model_reentrancy();
 		export_refresh(dir.path(), window);
+		metadata_caching(dir.path(), window);
 		lifecycle_and_ui(dir.path(), window);
 		std::cout << "All regression groups passed\n";
 		return 0;

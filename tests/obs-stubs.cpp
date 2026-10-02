@@ -27,6 +27,9 @@ struct obs_output_t {
 namespace {
 obs_output_t output;
 obs_encoder_t encoder;
+obs_encoder_t replacement_encoder;
+obs_encoder_t *active_encoder = &encoder;
+int metadata_query_count = 0;
 bool recording = false, paused = false, exited = false, reject = false;
 bool output_ready = false;
 int output_queries = 0;
@@ -71,7 +74,7 @@ int obs_output_get_total_frames(obs_output_t *ptr)
 }
 obs_encoder_t *obs_output_get_video_encoder(obs_output_t *)
 {
-	return &encoder;
+	return active_encoder;
 }
 uint32_t obs_encoder_get_frame_rate_divisor(obs_encoder_t *ptr)
 {
@@ -100,6 +103,7 @@ const char *obs_data_get_string(obs_data_t *ptr, const char *key)
 void obs_data_release(obs_data_t *) {}
 bool obs_get_video_info(obs_video_info *info)
 {
+	++metadata_query_count;
 	*info = video;
 	return true;
 }
@@ -215,6 +219,8 @@ void reset(QMainWindow *window, const QString &dir)
 	output_ready = false;
 	output_queries = 0;
 	invalid_calls = 0;
+	active_encoder = &encoder;
+	metadata_query_count = 0;
 }
 void start(const QString &path, int frames)
 {
@@ -254,7 +260,16 @@ void set_rate(uint32_t num, uint32_t den)
 }
 void set_encoder(uint32_t divisor, uint32_t width, uint32_t height)
 {
-	encoder = {divisor, width, height};
+	*active_encoder = {divisor, width, height};
+}
+void replace_encoder(uint32_t divisor, uint32_t width, uint32_t height)
+{
+	replacement_encoder = {divisor, width, height};
+	active_encoder = &replacement_encoder;
+}
+int metadata_queries()
+{
+	return metadata_query_count;
 }
 void hotkey(int index)
 {

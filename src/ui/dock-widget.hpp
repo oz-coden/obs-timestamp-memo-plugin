@@ -9,7 +9,6 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QTableView>
-#include <QTimer>
 #include <QPointer>
 
 // Content widget. obs_frontend_add_dock_by_id owns the outer QDockWidget.
@@ -45,7 +44,6 @@ private slots:
 	void onClearClicked();
 	void onMarkerDataChanged(uint32_t marker_id, const QString &label, const QString &comment);
 	void onContextMenuRequested(const QPoint &pos);
-	void updateLiveTimer();
 
 	void onMarkerAdded(const MemoMarker &marker, int row);
 	void onMarkerUpdated(const MemoMarker &marker, int row);
@@ -86,6 +84,4 @@ private:
 	QPushButton *btn_clear_ = nullptr;
 	QPushButton *btn_settings_ = nullptr;
 	QPushButton *btn_unsaved_ = nullptr;
-
-	QTimer *live_timer_ = nullptr;
 };

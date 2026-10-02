@@ -118,7 +118,7 @@ std::string TextFormats::generate_markdown(const RecordingSession &session)
 	ss << std::fixed << std::setprecision(2);
 	ss << "- **Frame Rate**: " << fps.fps() << " fps (" << fps.num << "/" << fps.den << ")\n";
 
-	auto markers = session.get_markers();
+	const auto &markers = session.get_markers();
 	ss << "- **Total Markers**: " << markers.size() << "\n\n";
 
 	ss << "## Timeline / Chapters\n\n";

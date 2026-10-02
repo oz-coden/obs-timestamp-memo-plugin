@@ -86,6 +86,7 @@ signals:
 
 	void focusMemoInputRequested();
 	void unsavedDocumentsChanged();
+	void recordTimeChanged(uint64_t milliseconds);
 
 private:
 	void onRecordingStarted();
@@ -95,6 +96,7 @@ private:
 	void onRecordingFileSplit(const QString &path, uint64_t frame_offset);
 	void persist_edits();
 	void check_journal();
+	RecordingSnapshot poll_recording_state();
 
 	RecordingSession session_;
 	uint64_t document_revision_ = 0;

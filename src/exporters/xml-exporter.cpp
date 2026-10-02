@@ -78,7 +78,7 @@ bool XmlExporter::export_to_file(const RecordingSession &session, const std::str
 	out << "      </video>\n";
 	out << "    </media>\n";
 
-	auto markers = session.get_markers();
+	const auto &markers = session.get_markers();
 	for (const auto &m : markers) {
 		out << "    <marker>\n";
 		out << "      <name>" << escape_xml_qstring(m.label) << "</name>\n";

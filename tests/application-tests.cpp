@@ -19,10 +19,15 @@
 class FakeGateway final : public RecordingGateway {
 public:
 	RecordingSnapshot value;
+	mutable int snapshots = 0;
 	bool initialized = false;
 	void initialize() override { initialized = true; }
 	void shutdown() override { initialized = false; }
-	RecordingSnapshot snapshot() const override { return value; }
+	RecordingSnapshot snapshot() const override
+	{
+		++snapshots;
+		return value;
+	}
 	void drain_pending_events() override {}
 	void start()
 	{
@@ -463,7 +468,9 @@ int main(int argc, char **argv)
 		gateway.start();
 		CHECK(controller.is_recording());
 		gateway.value.total_frames = 60;
+		gateway.snapshots = 0;
 		gateway.quick(1);
+		CHECK(gateway.snapshots == 1);
 		CHECK(controller.session().get_markers().size() == 1);
 		CHECK(controller.session().get_markers().front().frame_index == 60);
 		CHECK(controller.session().get_markers().front().label == "Custom");

@@ -44,7 +44,7 @@ bool EdlExporter::export_to_file(const RecordingSession &session, const std::str
 	out << "TITLE: " << clean_edl_qstring(src_fi.completeBaseName().toStdString()) << "\n";
 	out << "FCM: " << (is_df ? "DROP FRAME" : "NON-DROP FRAME") << "\n\n";
 
-	auto markers = session.get_markers();
+	const auto &markers = session.get_markers();
 	int event_num = 1;
 
 	for (const auto &m : markers) {

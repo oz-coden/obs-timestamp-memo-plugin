@@ -51,9 +51,9 @@ DockWidget::DockWidget(SessionController &controller, PluginConfig &config, Expo
 
 	connect(table_model_, &MarkerTableModel::markerDataChanged, this, &DockWidget::onMarkerDataChanged);
 
-	live_timer_ = new QTimer(this);
-	connect(live_timer_, &QTimer::timeout, this, &DockWidget::updateLiveTimer);
-	live_timer_->start(250);
+	connect(&controller, &SessionController::recordTimeChanged, this, [this](uint64_t ms) {
+		lbl_live_time_->setText(QString::fromStdString(TimecodeHelper::ms_to_timestamp_str(ms, true)));
+	});
 
 	update_status_ui();
 	refreshMarkerButtons();
@@ -288,16 +288,6 @@ void DockWidget::onUnsavedClicked()
 	if (!saved)
 		QMessageBox::warning(this, "Save Failed",
 				     "Could not save the document. Its recovery data was retained.");
-}
-
-void DockWidget::updateLiveTimer()
-{
-	auto &controller = controller_;
-	if (controller.is_recording()) {
-
-		uint64_t ms = controller.current_record_ms();
-		lbl_live_time_->setText(QString::fromStdString(TimecodeHelper::ms_to_timestamp_str(ms, true)));
-	}
 }
 
 void DockWidget::onQuickMarkerClicked(int index)

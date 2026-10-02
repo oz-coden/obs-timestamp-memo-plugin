@@ -27,8 +27,14 @@ private:
 	bool is_paused() const;
 	uint64_t get_current_record_frames() const;
 	std::string get_current_record_file_path() const;
-	VideoFrameRate get_current_frame_rate() const;
-	void get_video_dimension(uint32_t &width, uint32_t &height) const;
+	void refresh_metadata(obs_encoder_t *encoder) const;
+	struct RecordingMetadata {
+		VideoFrameRate fps;
+		uint32_t width = 1920, height = 1080;
+	};
+	mutable RecordingMetadata metadata_;
+	mutable obs_encoder_t *metadata_encoder_ = nullptr; // Identity only; borrowed from the retained output.
+	mutable bool metadata_valid_ = false;
 
 private:
 	static void on_frontend_event(enum obs_frontend_event event, void *private_data);

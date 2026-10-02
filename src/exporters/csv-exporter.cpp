@@ -34,7 +34,7 @@ bool CsvExporter::export_to_file(const RecordingSession &session, const std::str
 
 	out << "Index,Timecode In,Timecode Out,Frame In,Elapsed Ms,Marker Name,Comment,Color,Status\n";
 
-	auto markers = session.get_markers();
+	const auto &markers = session.get_markers();
 	auto fps = session.frame_rate();
 
 	for (const auto &m : markers) {

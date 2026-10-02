@@ -12,6 +12,8 @@ void set_frames(int frames);
 void set_paused(bool paused);
 void set_rate(uint32_t num, uint32_t den);
 void set_encoder(uint32_t divisor, uint32_t width, uint32_t height);
+void replace_encoder(uint32_t divisor, uint32_t width, uint32_t height);
+int metadata_queries();
 void hotkey(int index);
 void exit();
 void reject_dock(bool reject);
