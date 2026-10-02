@@ -8,7 +8,8 @@
 - 更新後DLLのSHA256は`371273D4350B61065E35C65D7EDA44A90E15350AF33FD68DD278CEE0B052EC43`。build側とinstall先のDLL/PDBのhash一致を確認済み。コードは`0c1b59b`と同一で、本体コードの追加変更はない。
 - install先は`C:\Program Files\obs-studio\obs-plugins\64bit`。旧DLL/PDBのbackupは`.cache/obs-validation/previous-plugin-9fa8b38e18844e798dd096dbe99c9dc6`。`.cache/obs-validation/install-result.json`に結果を記録した。
 - Program Filesへの通常の書き込みはWindows権限で拒否されたため、UAC承認後、対象をDLL/PDBに限定した`.cache/obs-validation/install-reviewed-plugin.ps1`で更新した。OBS設定・録画・cacheは変更していない。
-- **実OBS操作の合否はまだ未確認**。ユーザーに起動/Dock/短い録画/打刻・メモ/pause・resume/停止/Export・Clipboardの確認を依頼中。結果を受けて[実OBS手順](docs/obs-manual-test.md)の残り（split、snapshot鮮度、保存失敗救済、cache衝突）を進める。
+- **実OBSの確認は一部完了**。ユーザー提供の`2026-10-02 23-00-55.json`とMarkdown Clipboard結果を照合し、35件の全詳細行、4種別、pause中の固定frame、再開後のframe進行を確認した。[実機データの記録](docs/obs-manual-test.md)を参照。全commentが空なので任意メモ保存は未確認。次はメモ編集とsnapshot鮮度、split、保存失敗救済、cache衝突を確認する。
+- 文書更新とHANDOFFを`7050bef`まで通常push済み。[再開後のCI](https://github.com/oz-coden/obs-timestamp-memo-plugin/actions/runs/37016306206)は全3OS build/testとformat成功。実機データの確認記録は次のローカル文書commitで保存し、確認作業がまとまってからpushする。
 - 以下の「現在地」以降は中断時の記録。文書commitのpush状態は再開時に`git status`と`git log origin/master..master`で確認する。
 
 ユーザーの外出に合わせ、コード修正・master統合・push・CI検証が完了した時点で中断する。途中のコード変更はない。再開時はまずGitの実際の状態を確認する。

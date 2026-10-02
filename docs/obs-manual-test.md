@@ -81,3 +81,15 @@ OBSを終了してから置き換え、同じプラグインが二重にイン�
 
 **R5は未変更**: recording activeでもoutputを取得できない条件は未立証。録画前のoutput取得、推測による再試行/打刻拒否を追加していない。
 **R6は未変更**: OBS cumulative frameと実muxerの分割境界が一致する保証はない。frame番号を焼き込んだ動画で、自動/手動分割・負荷・音声・muxer別に最初のframeを測定し、markerとの誤差を別途記録する。今回のテストはcontrollerのoffset計算を検証し、この実境界精度を証明していない。
+
+## 実機データの確認記録（2026-10-02）
+
+修正版のインストール後、ユーザーから実録画の`2026-10-02 23-00-55.json`と、MarkdownのCopy to Clipboard結果が提供された。元ファイルを変更せずに照合した。
+
+- source JSON SHA256: `D7E364FD29BEA6DE8070CEE206E0EC846528DD3B4429228F92396CC648D41457`。
+- session ID: `f3465b77-ebeb-401c-a09b-0fcbb49ddc8f`、schema `1.0.0`、1920x1080、60/1 fps。
+- 35件のIDは一意で1〜35。Markdownの件数・全詳細行のtimestamp/SMPTE/label/comment/colorが元JSONと一致し、frameとtimestampの往復換算も全件整合した。
+- ID 10〜19（5700ms）、25〜28（8833ms）、35（12033ms）は元JSONで`is_paused: true`。異なるcreated_atを持つ同一frameでの打刻が残り、再開後の行ではframeが進んでいる。Markdownが重複生成したものではない。
+- 4種別のlabel/colorは保存・Clipboard結果で一致。開始UTC表記と動画名の日本時間も整合する。
+- この試行で実録画データのJSON保存とMarkdown Clipboardの生成を確認できた。全commentは空のため、任意文字列のメモ保存、編集後のsnapshot鮮度、ファイルExport、split、再起動、保存失敗救済、cache衝突の合否はこのデータだけでは確認できない。
+- 再開後の文書commit `7050bef`に対する[CI](https://github.com/oz-coden/obs-timestamp-memo-plugin/actions/runs/37016306206)も全3OS build/testとformatに成功した。
