@@ -1,5 +1,7 @@
 # master 最終コードレビュー（2026-10-02）
 
+この文書は修正前の評価を保存した記録。R1〜R4/R7/I1〜I4への対応は[修正結果](final-review-fixes.md)、実機確認は[最新の確認手順](obs-manual-test.md)を参照。R5/R6の挙動は変更していない。
+
 ## 対象と結論
 
 対象は `master` / `origin/master` の `aa3518be55b8bb10980605b86b69b9e604ade154`。
