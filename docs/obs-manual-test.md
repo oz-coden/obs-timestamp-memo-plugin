@@ -92,4 +92,6 @@ OBSを終了してから置き換え、同じプラグインが二重にイン�
 - ID 10〜19（5700ms）、25〜28（8833ms）、35（12033ms）は元JSONで`is_paused: true`。異なるcreated_atを持つ同一frameでの打刻が残り、再開後の行ではframeが進んでいる。Markdownが重複生成したものではない。
 - 4種別のlabel/colorは保存・Clipboard結果で一致。開始UTC表記と動画名の日本時間も整合する。
 - この試行で実録画データのJSON保存とMarkdown Clipboardの生成を確認できた。全commentは空のため、任意文字列のメモ保存、編集後のsnapshot鮮度、ファイルExport、split、再起動、保存失敗救済、cache衝突の合否はこのデータだけでは確認できない。
+- 続くコメント編集後のJSON（SHA256 `2DDDE0BE1E7A623A474D2B54B0A42140FB821CF4F6AFE81337D83754E0101852`）と再コピー結果も照合した。同じsession ID・35件のまま、ID 1=`確認用メモ`、2=`a`、20=`Yo`、33=`Hi`がJSONとMarkdownに一致し、他の31件のcommentは空。日本語メモの保存と編集後のClipboard出力への反映を確認した。その他の未確認操作は引き続き残る。
+- 編集後のJSON保存は`SessionStore::save()`の`QSaveFile`による文書全体の再生成・置換。既存JSONを先に削除する処理はなく、一時ファイルへの全量書き込みが成功した後にcommitする。保存成功後に削除するのは復旧cacheである。
 - 再開後の文書commit `7050bef`に対する[CI](https://github.com/oz-coden/obs-timestamp-memo-plugin/actions/runs/37016306206)も全3OS build/testとformatに成功した。
