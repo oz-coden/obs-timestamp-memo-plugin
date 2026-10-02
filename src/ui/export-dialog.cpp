@@ -52,11 +52,7 @@ void ExportDialog::setup_ui()
 		vbox->addWidget(rb);
 	}
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
 	connect(btn_group_, &QButtonGroup::idClicked, this, &ExportDialog::onSelectionChanged);
-#else
-	connect(btn_group_, QOverload<int>::of(&QButtonGroup::buttonClicked), this, &ExportDialog::onSelectionChanged);
-#endif
 
 	main_layout->addWidget(grp);
 

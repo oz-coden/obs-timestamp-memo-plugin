@@ -6,6 +6,31 @@
 #include <limits>
 #include <sstream>
 
+std::vector<TextFormats::SubtitleCue> TextFormats::subtitle_cues(const RecordingSession &session)
+{
+	auto markers = session.get_markers(); // Sorting must not modify the document.
+	std::stable_sort(markers.begin(), markers.end(),
+			 [](const auto &a, const auto &b) { return a.timestamp_ms < b.timestamp_ms; });
+	std::vector<SubtitleCue> cues;
+	cues.reserve(markers.size());
+	auto end_after = [](uint64_t start, uint64_t duration) {
+		return start + std::min(duration, std::numeric_limits<uint64_t>::max() - start);
+	};
+	for (size_t i = 0; i < markers.size(); ++i) {
+		const auto &m = markers[i];
+		auto end = end_after(m.timestamp_ms, 2500);
+		if (i + 1 < markers.size())
+			end = std::min(end, markers[i + 1].timestamp_ms);
+		if (end <= m.timestamp_ms)
+			end = end_after(m.timestamp_ms, 1000);
+		std::string text = "[" + m.label + "]";
+		if (!m.comment.empty())
+			text += " " + m.comment;
+		cues.push_back({m.timestamp_ms, end, std::move(text)});
+	}
+	return cues;
+}
+
 static std::string format_youtube_timestamp(uint64_t ms, bool use_hours)
 {
 	uint64_t total_sec = ms / 1000;

@@ -54,21 +54,6 @@ std::shared_ptr<IExporter> ExporterRegistry::find_by_id(const std::string &id) c
 	return nullptr;
 }
 
-std::shared_ptr<IExporter> ExporterRegistry::find_by_extension(const std::string &ext) const
-{
-	std::string clean_ext = ext;
-	if (!clean_ext.empty() && clean_ext[0] == '.') {
-		clean_ext = clean_ext.substr(1);
-	}
-
-	for (const auto &exp : exporters_) {
-		if (exp->get_file_extension() == clean_ext) {
-			return exp;
-		}
-	}
-	return nullptr;
-}
-
 bool ExporterRegistry::export_by_id(const std::string &id, const RecordingSession &session,
 				    const std::string &output_path) const
 {

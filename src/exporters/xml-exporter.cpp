@@ -38,9 +38,6 @@ bool XmlExporter::export_to_file(const RecordingSession &session, const std::str
 	}
 
 	QTextStream out(&file);
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-	out.setCodec("UTF-8");
-#endif
 
 	QFileInfo src_fi(QString::fromStdString(session.video_path()));
 	QString seq_name = src_fi.completeBaseName();

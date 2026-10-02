@@ -61,6 +61,16 @@ int main()
 		session.add_marker_at_frame(130, 0, "same", "", "y", false);
 		CHECK(TextFormats::generate_chapters(session).find(" / same") != std::string::npos);
 		CHECK(TextFormats::generate_markdown(snapshot).find("memo") != std::string::npos);
+		RecordingSession subtitles;
+		subtitles.add_marker(2000, 0, "later", "", "", false);
+		subtitles.add_marker(1000, 0, "first", "", "a\nb", false);
+		subtitles.add_marker(1000, 0, "second", "", "", false);
+		const auto cues = TextFormats::subtitle_cues(subtitles);
+		CHECK(cues.size() == 3 && cues[0].start_ms == 1000 && cues[0].end_ms == 2000);
+		CHECK(cues[0].text == "[first] a\nb" && cues[1].text == "[second]");
+		CHECK(cues[1].end_ms == 2000 && cues[2].end_ms == 4500);
+		CHECK(subtitles.get_markers().front().timestamp_ms == 2000);
+		CHECK(TextFormats::subtitle_cues(RecordingSession{}).empty());
 		std::cout
 			<< "PASS pure FPS/timecodes, lifecycle/segments, document operations/snapshots and text export\n";
 		return 0;

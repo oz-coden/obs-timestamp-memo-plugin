@@ -12,7 +12,6 @@ public:
 	void register_exporter(std::shared_ptr<IExporter> exporter);
 	std::vector<std::shared_ptr<IExporter>> get_all() const;
 	std::shared_ptr<IExporter> find_by_id(const std::string &id) const;
-	std::shared_ptr<IExporter> find_by_extension(const std::string &ext) const;
 
 	bool export_by_id(const std::string &id, const RecordingSession &session, const std::string &output_path) const;
 

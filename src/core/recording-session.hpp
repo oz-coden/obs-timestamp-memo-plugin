@@ -20,7 +20,6 @@ public:
 	bool delete_marker(uint32_t id);
 	void clear_markers() { markers_.clear(); }
 	void set_video_path(const std::string &path) { metadata_.video_path = path; }
-	const SessionMetadata &metadata() const { return metadata_; }
 	const std::string &video_path() const { return metadata_.video_path; }
 	const std::string &session_id() const { return metadata_.session_id; }
 	const std::string &started_at() const { return metadata_.started_at; }

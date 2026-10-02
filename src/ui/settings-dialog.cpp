@@ -207,6 +207,5 @@ void SettingsDialog::onSaveClicked()
 		return;
 	}
 
-	emit settingsSaved();
 	accept();
 }

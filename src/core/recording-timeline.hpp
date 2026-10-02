@@ -40,7 +40,6 @@ public:
 		phase_ = Phase::Idle;
 		return true;
 	}
-	Phase phase() const { return phase_; }
 	bool active() const { return phase_ != Phase::Idle; }
 	bool paused() const { return phase_ == Phase::Paused; }
 	uint64_t relative_frames(uint64_t total) const { return total >= origin_ ? total - origin_ : 0; }

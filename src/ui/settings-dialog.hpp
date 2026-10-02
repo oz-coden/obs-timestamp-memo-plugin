@@ -14,9 +14,6 @@ class SettingsDialog : public QDialog {
 public:
 	explicit SettingsDialog(PluginConfig &config, QWidget *parent = nullptr);
 
-signals:
-	void settingsSaved();
-
 private slots:
 	void onPickColor(int index);
 	void onSaveClicked();

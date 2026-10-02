@@ -1,7 +1,7 @@
 #include "vtt-exporter.hpp"
 #include "timecode-helper.hpp"
+#include "text-formats.hpp"
 
-#include <algorithm>
 #include <sstream>
 #include <QDir>
 #include <QFileInfo>
@@ -13,31 +13,13 @@ std::string VttExporter::export_to_string(const RecordingSession &session)
 	std::ostringstream ss;
 	ss << "WEBVTT\n\n";
 
-	auto markers = session.get_markers();
-	std::stable_sort(markers.begin(), markers.end(),
-			 [](const auto &a, const auto &b) { return a.timestamp_ms < b.timestamp_ms; });
 	int cue_index = 1;
-
-	for (size_t i = 0; i < markers.size(); ++i) {
-		const auto &m = markers[i];
-		uint64_t start_ms = m.timestamp_ms;
-		uint64_t end_ms = start_ms + 2500;
-
-		if (i + 1 < markers.size()) {
-			end_ms = std::min(end_ms, markers[i + 1].timestamp_ms);
-		}
-		if (end_ms <= start_ms) {
-			end_ms = start_ms + 1000;
-		}
-
+	for (const auto &cue : TextFormats::subtitle_cues(session)) {
 		ss << cue_index++ << "\n";
-		ss << TimecodeHelper::ms_to_timestamp_str(start_ms, true) << " --> "
-		   << TimecodeHelper::ms_to_timestamp_str(end_ms, true) << "\n";
+		ss << TimecodeHelper::ms_to_timestamp_str(cue.start_ms, true) << " --> "
+		   << TimecodeHelper::ms_to_timestamp_str(cue.end_ms, true) << "\n";
 
-		QString payload = "[" + QString::fromStdString(m.label) + "]";
-		if (!m.comment.empty()) {
-			payload += " " + QString::fromStdString(m.comment);
-		}
+		QString payload = QString::fromStdString(cue.text);
 		payload.replace('&', "&amp;");
 		payload.replace('<', "&lt;");
 		payload.replace('>', "&gt;");
@@ -61,9 +43,6 @@ bool VttExporter::export_to_file(const RecordingSession &session, const std::str
 	}
 
 	QTextStream out(&file);
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-	out.setCodec("UTF-8");
-#endif
 
 	std::string content = export_to_string(session);
 	out << QString::fromStdString(content);

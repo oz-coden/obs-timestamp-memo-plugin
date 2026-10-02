@@ -8,7 +8,6 @@
 class SessionStore {
 public:
 	explicit SessionStore(std::string cache_directory = "") : cache_directory_(std::move(cache_directory)) {}
-	void set_cache_directory(std::string path) { cache_directory_ = std::move(path); }
 	bool begin(const RecordingSession &session);
 	bool finish(const RecordingSession &session, bool save_json, std::string *path = nullptr);
 	bool save(const RecordingSession &session, const std::string &path = "");
