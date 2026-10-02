@@ -80,7 +80,7 @@ R1の退避・再開とR2の自動更新拒否はUX変更を伴うため実OBS�
 
 コード最終commit `3800295`の[GitHub Actions](https://github.com/oz-coden/obs-timestamp-memo-plugin/actions/runs/36974137169)は成功。Windows/macOS/Ubuntuで実plugin buildと全3suite、format gateが成功した。厳密なformat gateを有効にするため、同じ既存tool versionで不一致だったroot/tests CMakeとXMLの1行だけも整形した。version差による一括書き換えは行っていない。
 
-文書更新後も修正branchのCIを確認し、origin/masterが開始時の基準から変わっていない場合にmasterへfast-forward統合する。masterでWindows build/CTestを再実行し、cleanを確認した後だけ通常pushする。実施結果・最終HEAD・最後のCI URLは最終回答に記録する。
+文書更新後の修正branch CIも成功し、origin/masterが開始時の基準から変わっていないことを確認して、`0c1b59b`をmasterへfast-forward統合した。masterでWindows build/CTestを再実行して成功、cleanを確認した後に通常pushした。[push後のmaster CI](https://github.com/oz-coden/obs-timestamp-memo-plugin/actions/runs/36975392831)もWindows/macOS/Ubuntu build・全3suite・format成功。再開時にもWindows build/CTest 3/3を確認し、実OBS 32.2.1へ同コードのDLL/PDBを更新した。実操作による合否はまだ未確認。
 
 ## Git commit
 

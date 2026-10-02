@@ -1,5 +1,16 @@
 # 作業引き継ぎ（2026-10-02）
 
+## 再開後の更新（2026-10-02）
+
+- 再開時のmasterは`2f5a81b`、origin/masterは`0c1b59b`。fetchで未知のremote変更がないこと、working treeがcleanであることを確認した。
+- Windows x64 plugin build、test build、CTestのdomain/application/regressionsを再実行し、**3/3成功**。
+- 実OBS 32.2.1に入っていたDLLは旧版（SHA256 `7B11E06D9516838C8DBF9DB401EFBDA7FC10D6811027E86C74C63921B0C9C4C7`）だったため、OBS停止中に検証済みDLL/PDBへ更新した。
+- 更新後DLLのSHA256は`371273D4350B61065E35C65D7EDA44A90E15350AF33FD68DD278CEE0B052EC43`。build側とinstall先のDLL/PDBのhash一致を確認済み。コードは`0c1b59b`と同一で、本体コードの追加変更はない。
+- install先は`C:\Program Files\obs-studio\obs-plugins\64bit`。旧DLL/PDBのbackupは`.cache/obs-validation/previous-plugin-9fa8b38e18844e798dd096dbe99c9dc6`。`.cache/obs-validation/install-result.json`に結果を記録した。
+- Program Filesへの通常の書き込みはWindows権限で拒否されたため、UAC承認後、対象をDLL/PDBに限定した`.cache/obs-validation/install-reviewed-plugin.ps1`で更新した。OBS設定・録画・cacheは変更していない。
+- **実OBS操作の合否はまだ未確認**。ユーザーに起動/Dock/短い録画/打刻・メモ/pause・resume/停止/Export・Clipboardの確認を依頼中。結果を受けて[実OBS手順](docs/obs-manual-test.md)の残り（split、snapshot鮮度、保存失敗救済、cache衝突）を進める。
+- 以下の「現在地」以降は中断時の記録。文書commitのpush状態は再開時に`git status`と`git log origin/master..master`で確認する。
+
 ユーザーの外出に合わせ、コード修正・master統合・push・CI検証が完了した時点で中断する。途中のコード変更はない。再開時はまずGitの実際の状態を確認する。
 
 ## 現在地

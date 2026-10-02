@@ -6,6 +6,7 @@ OBS 32.2.1起動時のクラッシュに対する修正後は、まず通常起�
 2026-10-02の設計変更後はOBS本体で再確認していない。以下は新しいDLLを実OBSへ入れた後に人間が確認する手順。
 既存のプラグイン、設定、録画をバックアップし、テスト録画用ディレクトリで実施する。
 DLLは build_x64/rundir/RelWithDebInfo/obs-timestamp-memo.dll。
+2026-10-02の作業再開時に、Windows build/CTest 3/3を再確認し、実OBS 32.2.1のDLL/PDBを修正版へ更新した。install先とbuild側のhash一致は確認済み。実操作の結果は確認待ち。旧DLL/PDBのbackup場所とhashは[HANDOFF](../HANDOFF.md)を参照。
 OBSを終了してから置き換え、同じプラグインが二重にインストールされていないことを確認する。
 
 1. OBSを起動し、ドックメニューからTimestamp Memoを表示する。
