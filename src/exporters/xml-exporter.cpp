@@ -14,8 +14,7 @@ QString escape_xml_qstring(const std::string &str)
 	QString valid;
 	for (QChar c : qstr) {
 		const auto code = c.unicode();
-		if ((code >= 0x20 || code == 0x09 || code == 0x0a || code == 0x0d) &&
-		    code != 0xfffe && code != 0xffff)
+		if ((code >= 0x20 || code == 0x09 || code == 0x0a || code == 0x0d) && code != 0xfffe && code != 0xffff)
 			valid += c;
 	}
 	qstr = valid;
