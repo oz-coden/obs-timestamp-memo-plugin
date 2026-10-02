@@ -152,7 +152,7 @@ jobs:
         if: failure()
         run: |
           if [[ -x build_tests/regressions ]]; then
-            QT_QPA_PLATFORM=minimal lldb --batch -o run -o 'thread backtrace all' -- build_tests/regressions
+            QT_QPA_PLATFORM=minimal lldb --batch -o run -k 'thread backtrace all' -- build_tests/regressions
           fi
 
       - name: Package Plugin 📀
