@@ -360,6 +360,12 @@ static void metadata_caching(const QString &dir, QMainWindow &window)
 	FakeObs::start(dir + "/metadata-next.mkv");
 	CHECK(bridge.snapshot().width == 640 && bridge.snapshot().fps.num == 60000);
 	FakeObs::stop();
+	FakeObs::video_info_available(false);
+	FakeObs::start(dir + "/metadata-retry.mkv");
+	CHECK(bridge.snapshot().fps.num == 60);
+	FakeObs::video_info_available(true);
+	CHECK(bridge.snapshot().fps.num == 60000);
+	FakeObs::stop();
 	bridge.shutdown();
 	const auto after = FakeObs::metadata_queries();
 	CHECK(!bridge.snapshot().recording && FakeObs::metadata_queries() == after);

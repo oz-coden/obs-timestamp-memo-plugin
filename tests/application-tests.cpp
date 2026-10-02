@@ -314,7 +314,7 @@ static void codec_validation(const QString &dir)
 		bad[key] = false;
 		reject(bad);
 	}
-	for (const auto schema : {QJsonValue("2.0.0"), QJsonValue(1), QJsonValue("")}) {
+	for (const auto &schema : {QJsonValue("2.0.0"), QJsonValue(1), QJsonValue("")}) {
 		auto bad = valid;
 		bad["schema_version"] = schema;
 		reject(bad);
@@ -324,7 +324,7 @@ static void codec_validation(const QString &dir)
 	reject(bad_id);
 	for (const auto key :
 	     {"id", "timestamp_ms", "frame_index", "type_index", "label", "color", "comment", "is_paused"}) {
-		for (const auto value : {QJsonValue(), QJsonValue(QJsonArray{})}) {
+		for (const auto &value : {QJsonValue(), QJsonValue(QJsonArray{})}) {
 			auto bad = valid;
 			auto marker = bad["markers"].toArray().first().toObject();
 			marker[key] = value;
@@ -333,7 +333,7 @@ static void codec_validation(const QString &dir)
 		}
 	}
 	for (const auto key : {"timestamp_ms", "frame_index", "id", "type_index"}) {
-		for (const auto value :
+		for (const auto &value :
 		     {QJsonValue(-1), QJsonValue(0.5), QJsonValue(std::numeric_limits<qint64>::max())}) {
 			auto bad = valid;
 			auto marker = bad["markers"].toArray().first().toObject();
@@ -343,7 +343,7 @@ static void codec_validation(const QString &dir)
 		}
 	}
 	for (const auto key : {"fps_num", "fps_den", "width", "height"}) {
-		for (const auto value :
+		for (const auto &value :
 		     {QJsonValue(), QJsonValue("60"), QJsonValue(0), QJsonValue(-1), QJsonValue(0.5)}) {
 			auto bad = valid;
 			auto video = bad["video_info"].toObject();

@@ -179,7 +179,8 @@ void ObsBridge::refresh_metadata(obs_encoder_t *encoder) const
 		}
 	}
 	metadata_encoder_ = encoder;
-	metadata_valid_ = true;
+	// A transient video-info failure must remain retryable on the next poll.
+	metadata_valid_ = have_video;
 }
 
 void ObsBridge::on_frontend_event(enum obs_frontend_event event, void *private_data)

@@ -30,6 +30,7 @@ obs_encoder_t encoder;
 obs_encoder_t replacement_encoder;
 obs_encoder_t *active_encoder = &encoder;
 int metadata_query_count = 0;
+bool have_video_info = true;
 bool recording = false, paused = false, exited = false, reject = false;
 bool output_ready = false;
 int output_queries = 0;
@@ -104,6 +105,8 @@ void obs_data_release(obs_data_t *) {}
 bool obs_get_video_info(obs_video_info *info)
 {
 	++metadata_query_count;
+	if (!have_video_info)
+		return false;
 	*info = video;
 	return true;
 }
@@ -221,6 +224,7 @@ void reset(QMainWindow *window, const QString &dir)
 	invalid_calls = 0;
 	active_encoder = &encoder;
 	metadata_query_count = 0;
+	have_video_info = true;
 }
 void start(const QString &path, int frames)
 {
@@ -270,6 +274,10 @@ void replace_encoder(uint32_t divisor, uint32_t width, uint32_t height)
 int metadata_queries()
 {
 	return metadata_query_count;
+}
+void video_info_available(bool available)
+{
+	have_video_info = available;
 }
 void hotkey(int index)
 {
