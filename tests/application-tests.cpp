@@ -50,6 +50,157 @@ public:
 	}
 	void quick(int type) { emit quickMarkerRequested(type); }
 };
+static void unsaved_protection(SessionController &controller, FakeGateway &gateway, const QString &dir)
+{
+	QFile blocked(dir + "/blocked");
+	CHECK(blocked.open(QIODevice::WriteOnly));
+	blocked.close();
+	gateway.value.path = (blocked.fileName() + "/old.mkv").toStdString();
+	gateway.start();
+	CHECK(controller.trigger_quick_marker(0, "must survive split"));
+	gateway.split((dir + "/new.mkv").toStdString(), 60);
+	CHECK(controller.is_recording() && controller.session().get_markers().empty());
+	CHECK(controller.unsaved_documents().size() == 1);
+	const auto id = controller.unsaved_documents().front().id;
+	RecordingSession rescued;
+	CHECK(controller.read_unsaved_document(id, rescued));
+	CHECK(rescued.get_markers().front().comment == "must survive split");
+	CHECK(!controller.save_unsaved_document(id, (blocked.fileName() + "/save.json").toStdString()));
+	CHECK(controller.unsaved_documents().size() == 1);
+	CHECK(controller.save_unsaved_document(id, (dir + "/rescued.json").toStdString()));
+	CHECK(controller.unsaved_documents().empty());
+	gateway.stop();
+	CHECK(!controller.has_unsaved_current());
+	// Journal failure with a subsequently writable JSON destination is safe.
+	gateway.start();
+	CHECK(controller.trigger_quick_marker(0));
+	gateway.stop();
+	CHECK(!controller.has_unsaved_current());
+	gateway.value.path = (blocked.fileName() + "/stop.mkv").toStdString();
+	gateway.start();
+	CHECK(controller.trigger_quick_marker(0, "must survive stop and restart"));
+	gateway.stop();
+	CHECK(controller.has_unsaved_current());
+	gateway.value.path = (dir + "/after-stop.mkv").toStdString();
+	gateway.start();
+	CHECK(controller.unsaved_documents().size() == 1);
+	CHECK(controller.read_unsaved_document(controller.unsaved_documents().front().id, rescued));
+	CHECK(rescued.get_markers().front().comment == "must survive stop and restart");
+	gateway.stop();
+	// A valid journal can back an unsaved entry without holding a snapshot.
+	CHECK(QDir().mkpath(dir + "/journal-only.json"));
+	gateway.value.path = (dir + "/journal-only.mkv").toStdString();
+	gateway.start();
+	CHECK(controller.trigger_quick_marker(0, "journal survives"));
+	gateway.stop();
+	CHECK(controller.has_unsaved_current());
+	gateway.value.path = (dir + "/after-journal.mkv").toStdString();
+	gateway.start();
+	CHECK(!controller.unsaved_documents().back().memory);
+	CHECK(controller.read_unsaved_document(controller.unsaved_documents().back().id, rescued));
+	CHECK(rescued.get_markers().front().comment == "journal survives");
+	gateway.stop();
+	CHECK(QDir().mkpath(dir + "/edited-journal.json"));
+	gateway.value.path = (dir + "/edited-journal.mkv").toStdString();
+	gateway.start();
+	CHECK(controller.trigger_quick_marker(0, "before stop"));
+	gateway.stop();
+	CHECK(controller.update_marker_data(controller.session().get_markers().front().id, "edited", "", "after stop"));
+	gateway.value.path = (dir + "/after-edit.mkv").toStdString();
+	gateway.start();
+	CHECK(controller.read_unsaved_document(controller.unsaved_documents().back().id, rescued));
+	CHECK(rescued.get_markers().front().comment == "after stop");
+	gateway.stop();
+}
+static void bounded_unsaved_protection(const QString &dir)
+{
+	PluginConfig config(QSettings::IniFormat);
+	SessionStore store;
+	ExporterRegistry exporters;
+	FakeGateway gateway;
+	SessionController controller(gateway, config, store, exporters);
+	controller.initialize();
+	QFile blocked(dir + "/bounded-blocked");
+	CHECK(blocked.open(QIODevice::WriteOnly));
+	blocked.close();
+	gateway.value.path = (blocked.fileName() + "/0.mkv").toStdString();
+	gateway.start();
+	for (int i = 0; i < 9; ++i) {
+		CHECK(controller.trigger_quick_marker(0, "segment-" + std::to_string(i)));
+		gateway.split((blocked.fileName() + QString("/%1.mkv").arg(i + 1)).toStdString(), 60ULL * (i + 1));
+	}
+	CHECK(controller.is_recording() && !controller.can_stamp());
+	CHECK(controller.unsaved_documents().size() == 8);
+	CHECK(controller.session().get_markers().front().comment == "segment-8");
+	CHECK(!controller.trigger_quick_marker(0));
+	CHECK(controller.save_unsaved_document(controller.unsaved_documents().front().id,
+					       (dir + "/bounded-rescue.json").toStdString()));
+	CHECK(controller.can_stamp() && controller.unsaved_documents().size() == 8);
+	CHECK(controller.trigger_quick_marker(0, "resumed"));
+	gateway.stop();
+	CHECK(controller.save_current_document((dir + "/current-rescue.json").toStdString()));
+	CHECK(!controller.has_unsaved_current());
+}
+static void journal_failure_json_success(const QString &dir)
+{
+	PluginConfig config(QSettings::IniFormat);
+	SessionStore store;
+	ExporterRegistry exporters;
+	FakeGateway gateway;
+	SessionController controller(gateway, config, store, exporters);
+	controller.initialize();
+	QFile blocked(dir + "/temporarily-blocked");
+	CHECK(blocked.open(QIODevice::WriteOnly));
+	blocked.close();
+	gateway.value.path = (blocked.fileName() + "/video.mkv").toStdString();
+	gateway.start();
+	CHECK(controller.trigger_quick_marker(0));
+	CHECK(!store.journal_healthy());
+	CHECK(blocked.remove());
+	CHECK(QDir().mkpath(blocked.fileName()));
+	gateway.stop();
+	CHECK(!controller.has_unsaved_current());
+	CHECK(QFile::exists(blocked.fileName() + "/video.json"));
+	gateway.start();
+	CHECK(controller.unsaved_documents().empty());
+	gateway.stop();
+}
+static void durable_unsaved_recovery(const QString &dir)
+{
+	const auto cache_dir = (dir + "/durable-cache").toStdString();
+	const auto blocked_path = dir + "/durable-blocked";
+	QFile blocked(blocked_path);
+	CHECK(blocked.open(QIODevice::WriteOnly));
+	blocked.close();
+	{
+		PluginConfig config(QSettings::IniFormat);
+		SessionStore store(cache_dir);
+		ExporterRegistry exporters;
+		FakeGateway gateway;
+		SessionController controller(gateway, config, store, exporters);
+		controller.initialize();
+		gateway.value.path = (blocked_path + "/old.mkv").toStdString();
+		gateway.start();
+		CHECK(controller.trigger_quick_marker(0, "survives runtime destruction"));
+		gateway.split((dir + "/durable-new.mkv").toStdString(), 60);
+		CHECK(controller.unsaved_documents().size() == 1);
+		CHECK(!controller.unsaved_documents().front().memory);
+		gateway.stop();
+	}
+	PluginConfig config(QSettings::IniFormat);
+	SessionStore store(cache_dir);
+	ExporterRegistry exporters;
+	FakeGateway gateway;
+	SessionController controller(gateway, config, store, exporters);
+	controller.initialize();
+	CHECK(controller.unsaved_documents().size() == 1);
+	RecordingSession restored;
+	const auto id = controller.unsaved_documents().front().id;
+	CHECK(controller.read_unsaved_document(id, restored));
+	CHECK(restored.get_markers().front().comment == "survives runtime destruction");
+	CHECK(controller.save_unsaved_document(id, (dir + "/durable-saved.json").toStdString()));
+	CHECK(store.recovery_copies().empty());
+}
 int main(int argc, char **argv)
 {
 	QCoreApplication app(argc, argv);
@@ -132,6 +283,12 @@ int main(int argc, char **argv)
 		CHECK(controller.session().get_markers().size() == 1);
 		gateway.stop();
 		controller.shutdown();
+		controller.initialize();
+		unsaved_protection(controller, gateway, dir.path());
+		controller.shutdown();
+		bounded_unsaved_protection(dir.path());
+		journal_failure_json_success(dir.path());
+		durable_unsaved_recovery(dir.path());
 		// A failed settings write must not publish a partly edited live value.
 		QFile blocked(dir.path() + "/blocked");
 		CHECK(blocked.open(QIODevice::WriteOnly));

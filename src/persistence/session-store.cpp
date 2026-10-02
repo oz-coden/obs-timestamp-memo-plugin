@@ -7,6 +7,35 @@
 #include <QJsonDocument>
 #include <QSaveFile>
 #include <unordered_set>
+#include <QUuid>
+std::string SessionStore::create_recovery_copy(const RecordingSession &session) const
+{
+	if (cache_directory_.empty())
+		return {};
+	QDir dir(QString::fromStdString(cache_directory_) + "/unsaved");
+	if (!dir.mkpath("."))
+		return {};
+	const auto path = dir.filePath(QUuid::createUuid().toString(QUuid::WithoutBraces) + ".json").toStdString();
+	SessionStore backup;
+	return backup.save(session, path) ? path : std::string();
+}
+void SessionStore::acknowledge_saved(const std::string &path)
+{
+	if (journaling())
+		return;
+	source_path_ = path;
+	remove_cache();
+}
+std::vector<std::string> SessionStore::recovery_copies() const
+{
+	std::vector<std::string> result;
+	if (cache_directory_.empty())
+		return result;
+	QDir dir(QString::fromStdString(cache_directory_) + "/unsaved");
+	for (const auto &file : dir.entryList({"*.json"}, QDir::Files))
+		result.push_back(dir.filePath(file).toStdString());
+	return result;
+}
 void SessionStore::close()
 {
 	if (stream_)

@@ -42,6 +42,7 @@ DockWidget::DockWidget(SessionController &controller, PluginConfig &config, Expo
 	connect(&controller, &SessionController::sessionStopped, this, &DockWidget::onSessionStopped);
 	connect(&controller, &SessionController::videoPathResolved, this, &DockWidget::onVideoPathResolved);
 	connect(&controller, &SessionController::focusMemoInputRequested, this, &DockWidget::onFocusMemoInputRequested);
+	connect(&controller, &SessionController::unsavedDocumentsChanged, this, &DockWidget::update_status_ui);
 
 	connect(&config_, &PluginConfig::configChanged, this, [this]() {
 		refreshMarkerButtons();
@@ -159,6 +160,9 @@ void DockWidget::setup_ui()
 	btn_clear_ = new QPushButton("Clear", container);
 	btn_clear_->setFixedHeight(26);
 	connect(btn_clear_, &QPushButton::clicked, this, &DockWidget::onClearClicked);
+	btn_unsaved_ = new QPushButton("Unsaved...", container);
+	btn_unsaved_->setObjectName("UnsavedDocuments");
+	connect(btn_unsaved_, &QPushButton::clicked, this, &DockWidget::onUnsavedClicked);
 
 	btn_settings_ = new QPushButton("Settings", container);
 	btn_settings_->setFixedHeight(26);
@@ -167,6 +171,7 @@ void DockWidget::setup_ui()
 	bottom_layout->addWidget(btn_open_);
 	bottom_layout->addWidget(btn_export_);
 	bottom_layout->addWidget(btn_clear_);
+	bottom_layout->addWidget(btn_unsaved_);
 	bottom_layout->addStretch();
 	bottom_layout->addWidget(btn_settings_);
 	main_layout->addLayout(bottom_layout);
@@ -213,8 +218,11 @@ void DockWidget::update_status_ui()
 	btn_open_->setEnabled(!rec);
 
 	for (auto *button : quick_marker_btns_)
-		button->setEnabled(rec);
-	btn_add_memo_->setEnabled(rec);
+		button->setEnabled(controller.can_stamp());
+	btn_add_memo_->setEnabled(controller.can_stamp());
+	const auto unsaved_count = controller.unsaved_documents().size() + (controller.has_unsaved_current() ? 1 : 0);
+	btn_unsaved_->setVisible(unsaved_count != 0);
+	btn_unsaved_->setText(QString("Unsaved (%1)...").arg(static_cast<qulonglong>(unsaved_count)));
 	bool has_markers = !controller.session().get_markers().empty();
 	if (!rec)
 		lbl_live_time_->setText("—");
@@ -224,6 +232,62 @@ void DockWidget::update_status_ui()
 	lbl_status_->setStyleSheet(QString("font-weight:bold;color:%1;")
 					   .arg(rec ? (controller.is_paused() ? "#f39c12" : "#e74c3c") : "#888888"));
 	lbl_video_name_->setText(controller.document_title());
+}
+
+void DockWidget::onUnsavedClicked()
+{
+	QPointer<DockWidget> guard(this);
+	QMenu menu;
+	auto add_document = [&](uint64_t id, const QString &title) {
+		auto *entry = menu.addMenu(title);
+		auto *save = entry->addAction("Save JSON as...");
+		auto *export_action = entry->addAction("Export snapshot...");
+		save->setData(QVariant::fromValue<qulonglong>(id));
+		export_action->setData(QVariant::fromValue<qulonglong>(id));
+		save->setObjectName("SaveUnsaved");
+	};
+	if (controller_.has_unsaved_current())
+		add_document(0, controller_.document_title());
+	for (const auto &entry : controller_.unsaved_documents())
+		add_document(entry.id, QString::fromStdString(entry.title));
+	auto *action = menu.exec(QCursor::pos());
+	if (!guard || !action)
+		return;
+	const auto id = action->data().toULongLong();
+	RecordingSession snapshot;
+	if (id == 0) {
+		if (!controller_.has_unsaved_current())
+			return;
+		snapshot = controller_.session();
+	} else if (!controller_.read_unsaved_document(id, snapshot)) {
+		QMessageBox::warning(this, "Recovery Error",
+				     "Could not read the unsaved document. Recovery files were retained.");
+		return;
+	}
+	if (action->objectName() != "SaveUnsaved") {
+		auto *dialog = new ExportDialog(snapshot, exporters_, this);
+		dialog->setAttribute(Qt::WA_DeleteOnClose);
+		dialog->show();
+		return;
+	}
+	const auto session_id = snapshot.session_id();
+	QFileInfo video(QString::fromStdString(snapshot.video_path()));
+	const auto path = QFileDialog::getSaveFileName(this, "Save Unsaved JSON",
+						       video.dir().filePath(video.completeBaseName() + ".json"),
+						       "JSON Files (*.json)");
+	if (!guard || path.isEmpty())
+		return;
+	// The current document can change while the native file dialog is open.
+	if (id == 0 && controller_.session().session_id() != session_id) {
+		QMessageBox::warning(this, "Document Changed",
+				     "The current document changed. Choose the unsaved document again.");
+		return;
+	}
+	const bool saved = id == 0 ? controller_.save_current_document(path.toStdString())
+				   : controller_.save_unsaved_document(id, path.toStdString());
+	if (!saved)
+		QMessageBox::warning(this, "Save Failed",
+				     "Could not save the document. Its recovery data was retained.");
 }
 
 void DockWidget::updateLiveTimer()

@@ -39,6 +39,7 @@ private slots:
 	void onAddMemoClicked();
 	void onOpenJsonClicked();
 	void onExportClicked();
+	void onUnsavedClicked();
 	void onSettingsClicked();
 	void onClearClicked();
 	void onMarkerDataChanged(uint32_t marker_id, const QString &label, const QString &comment);
@@ -82,6 +83,7 @@ private:
 	QPushButton *btn_export_ = nullptr;
 	QPushButton *btn_clear_ = nullptr;
 	QPushButton *btn_settings_ = nullptr;
+	QPushButton *btn_unsaved_ = nullptr;
 
 	QTimer *live_timer_ = nullptr;
 };

@@ -9,6 +9,98 @@
 #include <QFileInfo>
 #include <QCoreApplication>
 #include <QEvent>
+#include <algorithm>
+
+bool SessionController::preserve_current_document()
+{
+	if (!document_unsaved_)
+		return true;
+	UnsavedDocument document;
+	document.title = QFileInfo(QString::fromStdString(session_.video_path())).fileName().toStdString();
+	document.journal_path = store_.cache_path();
+	if (journal_current_ && store_.journal_healthy() &&
+	    QFile::exists(QString::fromStdString(document.journal_path)))
+		document.recovery_path = document.journal_path;
+	else
+		document.recovery_path = store_.create_recovery_copy(session_);
+	if (document.recovery_path.empty()) {
+		// Disk-backed entries do not retain snapshots. If all storage fails,
+		// keep at most eight snapshots plus the current document, never evict data.
+		const auto count = std::count_if(unsaved_documents_.begin(), unsaved_documents_.end(),
+						 [](const auto &entry) { return entry.memory.has_value(); });
+		if (count >= 8) {
+			notify("Unsaved document limit reached. OBS recording continues, but marker capture is suspended. "
+			       "Use Unsaved to save a document and resume capture.",
+			       10000);
+			return false;
+		}
+		document.memory = session_;
+	}
+	document.id = next_unsaved_id_++;
+	unsaved_documents_.push_back(std::move(document));
+	document_unsaved_ = false;
+	emit unsavedDocumentsChanged();
+	return true;
+}
+
+bool SessionController::read_unsaved_document(uint64_t id, RecordingSession &document) const
+{
+	for (const auto &entry : unsaved_documents_) {
+		if (entry.id != id)
+			continue;
+		if (entry.memory) {
+			document = *entry.memory;
+			return true;
+		}
+		SessionStore reader;
+		return QString::fromStdString(entry.recovery_path).endsWith(".tmp.jsonl")
+			       ? reader.recover(entry.recovery_path, document)
+			       : reader.load(entry.recovery_path, document);
+	}
+	return false;
+}
+
+bool SessionController::save_unsaved_document(uint64_t id, const std::string &path)
+{
+	RecordingSession document;
+	if (path.empty() || !read_unsaved_document(id, document) || !exporters_.export_by_id("json", document, path))
+		return false;
+	auto it = std::find_if(unsaved_documents_.begin(), unsaved_documents_.end(),
+			       [id](const auto &entry) { return entry.id == id; });
+	if (it == unsaved_documents_.end())
+		return false;
+	for (const auto &cache : {it->recovery_path, it->journal_path})
+		if (!cache.empty() && QString::fromStdString(cache) != QString::fromStdString(path))
+			QFile::remove(QString::fromStdString(cache));
+	unsaved_documents_.erase(it);
+	resume_capture();
+	emit unsavedDocumentsChanged();
+	return true;
+}
+
+bool SessionController::save_current_document(const std::string &path)
+{
+	if (path.empty() || (is_recording() && !capture_blocked_) || !exporters_.export_by_id("json", session_, path))
+		return false;
+	store_.acknowledge_saved(path);
+	document_unsaved_ = false;
+	resume_capture();
+	emit unsavedDocumentsChanged();
+	return true;
+}
+
+void SessionController::resume_capture()
+{
+	if (!capture_blocked_ || !timeline_.active())
+		return;
+	const auto capture = pending_capture_;
+	start_document(capture.path, capture.fps, capture.width, capture.height);
+	if (!capture_blocked_) {
+		emit markersReset(session_.get_markers(), session_.frame_rate());
+		emit videoPathResolved(QString::fromStdString(capture.path));
+		notify("Marker capture resumed. Earlier unsaved documents remain available in Unsaved.", 5000);
+	}
+}
 
 SessionController::SessionController(RecordingGateway &bridge, PluginConfig &config, SessionStore &store,
 				     ExporterRegistry &exporters)
@@ -34,6 +126,19 @@ void SessionController::initialize()
 	auto &bridge = bridge_;
 	if (!config_.load())
 		notify("Warning: Settings could not be loaded. Current defaults remain active.", 5000);
+	for (const auto &path : store_.recovery_copies()) {
+		if (std::any_of(unsaved_documents_.begin(), unsaved_documents_.end(),
+				[&path](const auto &entry) { return entry.recovery_path == path; }))
+			continue;
+		RecordingSession document;
+		SessionStore reader;
+		const auto title =
+			reader.load(path, document)
+				? QFileInfo(QString::fromStdString(document.video_path())).fileName().toStdString()
+				: QFileInfo(QString::fromStdString(path)).fileName().toStdString();
+		unsaved_documents_.push_back({next_unsaved_id_++, title, path, {}, std::nullopt});
+	}
+	emit unsavedDocumentsChanged();
 
 	connect(&bridge, &RecordingGateway::recordingStarted, this, &SessionController::onRecordingStarted);
 	connect(&bridge, &RecordingGateway::recordingPaused, this, &SessionController::onRecordingPaused);
@@ -68,11 +173,25 @@ void SessionController::shutdown()
 	QCoreApplication::removePostedEvents(this, QEvent::MetaCall);
 	if (timeline_.active()) {
 		std::string path = session_.video_path();
-		if (!store_.finish(session_, config_.values().auto_export.json))
+		const bool save_ok = store_.finish(session_, config_.values().auto_export.json);
+		document_unsaved_ = !save_ok && document_unsaved_;
+		if (document_unsaved_)
 			notify("Warning: Failed to persist session during shutdown.", 5000);
 		perform_auto_export(path);
 	}
 	timeline_.stop();
+	preserve_current_document();
+	for (auto &entry : unsaved_documents_) {
+		if (!entry.memory)
+			continue;
+		entry.recovery_path = store_.create_recovery_copy(*entry.memory);
+		if (!entry.recovery_path.empty())
+			entry.memory.reset();
+		else
+			notify("Warning: Unsaved markers remain only in memory. All recovery storage failed. "
+			       "Save them before closing OBS.",
+			       10000);
+	}
 }
 
 bool SessionController::is_recording() const
@@ -102,9 +221,13 @@ bool SessionController::trigger_quick_marker(int type_index, const std::string &
 		notify("Not recording! Cannot stamp marker.", 2000);
 		return false;
 	}
+	if (capture_blocked_) {
+		notify("Marker capture is suspended. Save an unsaved document first.", 5000);
+		return false;
+	}
 
 	check_recording_file_changed();
-	if (!timeline_.active())
+	if (!timeline_.active() || capture_blocked_)
 		return false;
 
 	if (type_index < 0 || type_index >= 4) {
@@ -119,7 +242,9 @@ bool SessionController::trigger_quick_marker(int type_index, const std::string &
 	MemoMarker m = session_.add_marker_at_frame(
 		timeline_.relative_frames(bridge_.snapshot().total_frames), type_index, label, color, comment, paused,
 		QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs).toStdString());
-	store_.append({{"op", "add"}, {"marker", SessionCodec::encode_marker(m)}});
+	journal_current_ = store_.append({{"op", "add"}, {"marker", SessionCodec::encode_marker(m)}}) &&
+			   journal_current_;
+	document_unsaved_ = true;
 	int row = static_cast<int>(session_.get_markers().size()) - 1;
 
 	std::string tc = m.active_timecode(session_.frame_rate());
@@ -185,7 +310,8 @@ bool SessionController::delete_marker(uint32_t id)
 		if (markers[i].id == id) {
 			session_.delete_marker(id);
 			if (timeline_.active())
-				store_.append({{"op", "delete"}, {"id", static_cast<qint64>(id)}});
+				journal_current_ = store_.append({{"op", "delete"}, {"id", static_cast<qint64>(id)}}) &&
+						   journal_current_;
 			persist_edits();
 			emit markerRemoved(id, static_cast<int>(i));
 			return true;
@@ -198,14 +324,14 @@ void SessionController::clear_markers()
 {
 	session_.clear_markers();
 	if (timeline_.active())
-		store_.append({{"op", "clear"}});
+		journal_current_ = store_.append({{"op", "clear"}}) && journal_current_;
 	persist_edits();
 	emit markersReset({}, session_.frame_rate());
 }
 
 bool SessionController::load_from_json(const std::string &path)
 {
-	if (is_recording())
+	if (is_recording() || !preserve_current_document())
 		return false;
 
 	if (store_.load(path, session_)) {
@@ -219,12 +345,13 @@ bool SessionController::load_from_json(const std::string &path)
 
 bool SessionController::recover_from_cache(const std::string &cache_path)
 {
-	if (is_recording())
+	if (is_recording() || !preserve_current_document())
 		return false;
 
 	if (store_.recover(cache_path, session_)) {
 		history_path_ = cache_path;
 		recovered_ = true;
+		document_unsaved_ = !session_.get_markers().empty();
 		emit markersReset(session_.get_markers(), session_.frame_rate());
 		return true;
 	}
@@ -233,11 +360,17 @@ bool SessionController::recover_from_cache(const std::string &cache_path)
 
 void SessionController::persist_edits()
 {
+	document_unsaved_ = true;
 	if (timeline_.active()) {
 		check_journal();
-	} else if (!store_.save(session_)) {
-		notify("Warning: Failed to save edited markers. Export JSON to preserve changes.", 5000);
+	} else {
+		document_unsaved_ = !store_.save(session_);
+		if (document_unsaved_)
+			notify("Warning: Failed to save edited markers. Use Unsaved to save JSON elsewhere.", 5000);
+		// A closed journal cannot contain edits made after STOPPED/recovery.
+		journal_current_ = false;
 	}
+	emit unsavedDocumentsChanged();
 }
 
 void SessionController::check_journal()
@@ -298,7 +431,9 @@ void SessionController::check_recording_file_changed()
 
 	if (session_.video_path().empty()) {
 		session_.set_video_path(current_path);
-		store_.append({{"op", "video_path"}, {"video_path", QString::fromStdString(current_path)}});
+		journal_current_ =
+			store_.append({{"op", "video_path"}, {"video_path", QString::fromStdString(current_path)}}) &&
+			journal_current_;
 		check_journal();
 		emit videoPathResolved(QString::fromStdString(current_path));
 	}
@@ -318,7 +453,7 @@ void SessionController::onRecordingStarted()
 		timeline_.pause();
 	journal_warning_shown_ = false;
 
-	emit markersReset({}, fps);
+	emit markersReset(session_.get_markers(), session_.frame_rate());
 	emit sessionStarted(QString::fromStdString(path));
 	notify("Recording started", 2000);
 	check_journal();
@@ -349,17 +484,22 @@ void SessionController::onRecordingStopped()
 		video_path = bridge_.snapshot().path;
 		if (!video_path.empty()) {
 			session_.set_video_path(video_path);
-			store_.append({{"op", "video_path"}, {"video_path", QString::fromStdString(video_path)}});
+			journal_current_ = store_.append({{"op", "video_path"},
+							  {"video_path", QString::fromStdString(video_path)}}) &&
+					   journal_current_;
 		}
 	}
 
 	std::string json_path;
 	bool save_ok = store_.finish(session_, config_.values().auto_export.json, &json_path);
+	document_unsaved_ = !save_ok && document_unsaved_;
 	timeline_.stop();
+	capture_blocked_ = false;
 
 	bool export_ok = perform_auto_export(video_path);
 
 	emit sessionStopped(QString::fromStdString(json_path));
+	emit unsavedDocumentsChanged();
 
 	if (save_ok && export_ok) {
 		notify("Recording stopped. Markers saved.", 3000);
@@ -377,6 +517,7 @@ void SessionController::onRecordingFileSplit(const QString &path, uint64_t frame
 	std::string old_video_path = session_.video_path();
 	std::string old_json_path;
 	bool save_ok = store_.finish(session_, config_.values().auto_export.json, &old_json_path);
+	document_unsaved_ = !save_ok && document_unsaved_;
 	bool export_ok = perform_auto_export(old_video_path);
 
 	const auto capture = bridge_.snapshot();
@@ -386,7 +527,7 @@ void SessionController::onRecordingFileSplit(const QString &path, uint64_t frame
 	start_document(new_path, fps, width, height);
 	journal_warning_shown_ = false;
 
-	emit markersReset({}, fps);
+	emit markersReset(session_.get_markers(), session_.frame_rate());
 	emit videoPathResolved(QString::fromStdString(new_path));
 	notify("Recording split into: " + new_path, 3000);
 	check_journal();
@@ -397,12 +538,20 @@ void SessionController::onRecordingFileSplit(const QString &path, uint64_t frame
 void SessionController::start_document(const std::string &path, const VideoFrameRate &fps, uint32_t width,
 				       uint32_t height)
 {
+	pending_capture_.path = path;
+	pending_capture_.fps = fps;
+	pending_capture_.width = width;
+	pending_capture_.height = height;
+	capture_blocked_ = !preserve_current_document();
+	if (capture_blocked_)
+		return;
 	history_path_.clear();
 	recovered_ = false;
 	session_.replace({path, QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString(),
 			  QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs).toStdString(), fps, width,
 			  height});
-	store_.begin(session_);
+	journal_current_ = store_.begin(session_);
+	document_unsaved_ = false;
 }
 void SessionController::journal_update(uint32_t id)
 {
@@ -412,7 +561,7 @@ void SessionController::journal_update(uint32_t id)
 		if (m.id == id) {
 			auto op = SessionCodec::encode_marker(m);
 			op["op"] = "update";
-			store_.append(op);
+			journal_current_ = store_.append(op) && journal_current_;
 			break;
 		}
 }
@@ -423,5 +572,7 @@ QString SessionController::document_title() const
 	if (path.empty())
 		return timeline_.active() ? "Resolving recording file..." : "No session loaded";
 	return QFileInfo(QString::fromStdString(path)).fileName() +
-	       (history_path_.empty() ? QString() : QString(recovered_ ? " (Recovered)" : " (Loaded)"));
+	       (history_path_.empty() ? QString() : QString(recovered_ ? " (Recovered)" : " (Loaded)")) +
+	       (capture_blocked_ ? " (Unsaved; marker capture suspended)"
+				 : (has_unsaved_current() ? " (Unsaved)" : ""));
 }

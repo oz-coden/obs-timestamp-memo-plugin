@@ -18,6 +18,10 @@ public:
 	bool journal_healthy() const { return healthy_; }
 	bool journaling() const { return file_ != nullptr; }
 	const std::string &source_path() const { return source_path_; }
+	const std::string &cache_path() const { return cache_path_; }
+	std::string create_recovery_copy(const RecordingSession &session) const;
+	std::vector<std::string> recovery_copies() const;
+	void acknowledge_saved(const std::string &path);
 
 private:
 	void close();

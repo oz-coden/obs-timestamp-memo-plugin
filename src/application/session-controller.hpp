@@ -9,11 +9,18 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <optional>
 #include <QObject>
 #include <QTimer>
 #include "recording-gateway.hpp"
 class PluginConfig;
 class ExporterRegistry;
+
+struct UnsavedDocument {
+	uint64_t id = 0;
+	std::string title, recovery_path, journal_path;
+	std::optional<RecordingSession> memory;
+};
 
 class SessionController : public QObject {
 	Q_OBJECT
@@ -50,6 +57,12 @@ public:
 	// Persistence / File ops
 	bool load_from_json(const std::string &path);
 	bool recover_from_cache(const std::string &cache_path);
+	const std::vector<UnsavedDocument> &unsaved_documents() const { return unsaved_documents_; }
+	bool has_unsaved_current() const { return document_unsaved_ && (!is_recording() || capture_blocked_); }
+	bool can_stamp() const { return is_recording() && !capture_blocked_; }
+	bool read_unsaved_document(uint64_t id, RecordingSession &document) const;
+	bool save_unsaved_document(uint64_t id, const std::string &path);
+	bool save_current_document(const std::string &path);
 
 	// Auto export
 	bool perform_auto_export(const std::string &base_video_path);
@@ -71,6 +84,7 @@ signals:
 	void videoPathResolved(const QString &newVideoPath);
 
 	void focusMemoInputRequested();
+	void unsavedDocumentsChanged();
 
 private:
 	void onRecordingStarted();
@@ -95,4 +109,11 @@ private:
 	void start_document(const std::string &path, const VideoFrameRate &fps, uint32_t width, uint32_t height);
 	bool initialized_ = false;
 	bool journal_warning_shown_ = false;
+	std::vector<UnsavedDocument> unsaved_documents_;
+	uint64_t next_unsaved_id_ = 1;
+	bool document_unsaved_ = false, capture_blocked_ = false;
+	bool journal_current_ = false;
+	RecordingSnapshot pending_capture_;
+	bool preserve_current_document();
+	void resume_capture();
 };
