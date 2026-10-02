@@ -13,6 +13,8 @@ public:
 	bool save(const RecordingSession &session, const std::string &path = "");
 	bool load(const std::string &path, RecordingSession &session);
 	bool recover(const std::string &path, RecordingSession &session);
+	// Commit a validated read without repeating I/O or losing the cache directory.
+	bool adopt_read(SessionStore &&reader);
 	bool append(const QJsonObject &operation);
 	bool journal_healthy() const { return healthy_; }
 	bool journaling() const { return file_ != nullptr; }

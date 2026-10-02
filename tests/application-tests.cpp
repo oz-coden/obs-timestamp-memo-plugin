@@ -90,6 +90,15 @@ static void unsaved_protection(SessionController &controller, FakeGateway &gatew
 	CHECK(controller.trigger_quick_marker(0, "must survive stop and restart"));
 	gateway.stop();
 	CHECK(controller.has_unsaved_current());
+	QFile invalid(dir + "/invalid-open.json");
+	CHECK(invalid.open(QIODevice::WriteOnly));
+	CHECK(invalid.write("{}") == 2);
+	invalid.close();
+	const auto pending_before = controller.unsaved_documents().size();
+	CHECK(!controller.load_from_json(invalid.fileName().toStdString()));
+	CHECK(!controller.recover_from_cache(invalid.fileName().toStdString()));
+	CHECK(controller.has_unsaved_current());
+	CHECK(controller.unsaved_documents().size() == pending_before);
 	gateway.value.path = (dir + "/after-stop.mkv").toStdString();
 	gateway.start();
 	CHECK(controller.unsaved_documents().size() == 1);

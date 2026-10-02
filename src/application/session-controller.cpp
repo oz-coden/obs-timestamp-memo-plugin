@@ -17,6 +17,8 @@ bool SessionController::preserve_current_document()
 		return true;
 	UnsavedDocument document;
 	document.title = QFileInfo(QString::fromStdString(session_.video_path())).fileName().toStdString();
+	if (document.title.empty())
+		document.title = "Unresolved recording (" + session_.session_id().substr(0, 8) + ")";
 	document.journal_path = store_.cache_path();
 	if (journal_current_ && store_.journal_healthy() &&
 	    QFile::exists(QString::fromStdString(document.journal_path)))
@@ -70,7 +72,8 @@ bool SessionController::save_unsaved_document(uint64_t id, const std::string &pa
 	if (it == unsaved_documents_.end())
 		return false;
 	for (const auto &cache : {it->recovery_path, it->journal_path})
-		if (!cache.empty() && QString::fromStdString(cache) != QString::fromStdString(path))
+		if (!cache.empty() && QFileInfo(QString::fromStdString(cache)).canonicalFilePath() !=
+					      QFileInfo(QString::fromStdString(path)).canonicalFilePath())
 			QFile::remove(QString::fromStdString(cache));
 	unsaved_documents_.erase(it);
 	resume_capture();
@@ -341,10 +344,13 @@ void SessionController::clear_markers()
 
 bool SessionController::load_from_json(const std::string &path)
 {
-	if (is_recording() || !preserve_current_document())
+	if (is_recording() || store_.journaling())
 		return false;
-
-	if (store_.load(path, session_)) {
+	SessionStore reader;
+	RecordingSession document;
+	if (reader.load(path, document) && preserve_current_document() && store_.adopt_read(std::move(reader))) {
+		session_ = std::move(document);
+		journal_current_ = false;
 		++document_revision_;
 		history_path_ = path;
 		recovered_ = false;
@@ -356,10 +362,14 @@ bool SessionController::load_from_json(const std::string &path)
 
 bool SessionController::recover_from_cache(const std::string &cache_path)
 {
-	if (is_recording() || !preserve_current_document())
+	if (is_recording() || store_.journaling())
 		return false;
-
-	if (store_.recover(cache_path, session_)) {
+	SessionStore reader;
+	RecordingSession document;
+	if (reader.recover(cache_path, document) && preserve_current_document() &&
+	    store_.adopt_read(std::move(reader))) {
+		session_ = std::move(document);
+		journal_current_ = true;
 		++document_revision_;
 		history_path_ = cache_path;
 		recovered_ = true;
@@ -588,10 +598,12 @@ void SessionController::journal_update(uint32_t id)
 QString SessionController::document_title() const
 {
 	std::string path = history_path_.empty() ? session_.video_path() : history_path_;
-	if (path.empty())
-		return timeline_.active() ? "Resolving recording file..." : "No session loaded";
-	return QFileInfo(QString::fromStdString(path)).fileName() +
-	       (history_path_.empty() ? QString() : QString(recovered_ ? " (Recovered)" : " (Loaded)")) +
+	const auto title = path.empty()
+				   ? (timeline_.active() ? "Resolving recording file..."
+							 : (session_.session_id().empty() ? "No session loaded"
+											  : "Unresolved recording"))
+				   : QFileInfo(QString::fromStdString(path)).fileName();
+	return title + (history_path_.empty() ? QString() : QString(recovered_ ? " (Recovered)" : " (Loaded)")) +
 	       (capture_blocked_ ? " (Unsaved; marker capture suspended)"
 				 : (has_unsaved_current() ? " (Unsaved)" : ""));
 }

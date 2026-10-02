@@ -161,6 +161,16 @@ bool SessionStore::load(const std::string &path, RecordingSession &session)
 		return false;
 	cache_path_.clear();
 	source_path_ = path;
+	healthy_ = false;
+	return true;
+}
+bool SessionStore::adopt_read(SessionStore &&reader)
+{
+	if (journaling() || reader.journaling() || (reader.source_path_.empty() && reader.cache_path_.empty()))
+		return false;
+	source_path_ = std::move(reader.source_path_);
+	cache_path_ = std::move(reader.cache_path_);
+	healthy_ = reader.healthy_;
 	return true;
 }
 bool SessionStore::recover(const std::string &path, RecordingSession &session)
@@ -250,5 +260,6 @@ bool SessionStore::recover(const std::string &path, RecordingSession &session)
 		return false;
 	cache_path_ = path;
 	source_path_.clear();
+	healthy_ = true;
 	return true;
 }
