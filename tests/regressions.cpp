@@ -383,6 +383,9 @@ static void lifecycle_and_ui(const QString &dir, QMainWindow &window)
 int main(int argc, char **argv)
 {
 	QApplication app(argc, argv);
+	// Native macOS styles expect Cocoa window handles; minimal has synthetic IDs.
+	// A portable style keeps headless tests independent of the host window system.
+	QApplication::setStyle("Fusion");
 	std::cout << std::unitbuf;
 	std::cerr << std::unitbuf;
 	QTemporaryDir dir(QDir::currentPath() + "/regression-data-XXXXXX");
