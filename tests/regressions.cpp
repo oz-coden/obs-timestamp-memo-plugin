@@ -625,6 +625,41 @@ static void global_hotkeys(const QString &dir, QMainWindow &window)
 	CHECK(FakeObs::hotkeys() == 0 && FakeObs::callbacks() == 0 && FakeObs::save_callbacks() == 0);
 }
 
+static void edit_actions(const QString &dir, QMainWindow &window)
+{
+	FakeObs::reset(&window, dir + "/edit-action-cache");
+	FakeObs::set_rate(60, 1);
+	FakeObs::set_encoder(1, 1920, 1080);
+	CHECK(obs_module_load());
+	auto *content = qobject_cast<DockWidget *>(FakeObs::dock()->widget());
+	auto &controller = content->controller();
+	auto *table = content->findChild<QTableView *>();
+	auto *undo = content->findChild<QAction *>("UndoMarkers");
+	auto *redo = content->findChild<QAction *>("RedoMarkers");
+	CHECK(undo && redo && !undo->isEnabled() && !redo->isEnabled());
+	CHECK(undo->shortcuts() == QKeySequence::keyBindings(QKeySequence::Undo));
+	CHECK(redo->shortcuts() == QKeySequence::keyBindings(QKeySequence::Redo));
+	FakeObs::start(dir + "/edit-action.mkv");
+	CHECK(controller.trigger_quick_marker(0, "retained memo"));
+	CHECK(controller.trigger_quick_marker(1));
+	const auto id = controller.session().get_markers().front().id;
+	CHECK(controller.delete_marker(id) && table->model()->rowCount() == 1);
+	undo->trigger();
+	CHECK(table->model()->rowCount() == 2 && controller.session().get_markers().front().id == id);
+	CHECK(table->model()->index(0, MarkerTableModel::Col_Comment).data().toString() == "retained memo");
+	redo->trigger();
+	CHECK(table->model()->rowCount() == 1);
+	undo->trigger();
+	CHECK(table->model()->setData(table->model()->index(0, MarkerTableModel::Col_Label), "custom label"));
+	CHECK(controller.update_marker_type(id, 2));
+	undo->trigger();
+	CHECK(controller.session().get_markers().front().type_index == 0);
+	CHECK(table->model()->index(0, MarkerTableModel::Col_Label).data().toString() == "custom label");
+	FakeObs::stop();
+	obs_module_unload();
+	FakeObs::reset(&window, dir + "/fallback");
+}
+
 static void localization(const QString &dir, QMainWindow &window)
 {
 	FakeObs::reset(&window, dir + "/locale-cache");
@@ -676,6 +711,7 @@ int main(int argc, char **argv)
 		notification_severity();
 		presentation_time(dir.path(), window);
 		localization(dir.path(), window);
+		edit_actions(dir.path(), window);
 		global_hotkeys(dir.path(), window);
 		timecodes();
 		persistence(dir.path());

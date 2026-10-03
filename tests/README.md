@@ -10,7 +10,9 @@ Three layers test behavior without launching OBS:
 
 Tests use temporary session files and explicitly select INI QSettings in a
 temporary directory. They do not load OBS or write its configuration. The
-production default remains the existing native settings format.
+production configuration now uses an explicit INI in the OBS module config
+directory, with read-only legacy migration. Tests use separate temporary config
+roots and never modify an actual OBS installation.
 
 Requirements: CMake 3.28+, C++20 compiler, and (for the full suite) Qt6 with the
 minimal platform plugin. CTest selects minimal and adds the Qt DLL directory to
@@ -52,9 +54,17 @@ declaration-only analyzer-compat.hpp for OBS 31.1.1's _udiv128 header path:
 
 That compatibility header is never linked into the plugin. The local Windows
 review used an ignored analysis database reflecting all current source paths and
-include directories. All 25 implementation files were analyzed; a Qt-owned
+include directories. All 26 implementation files were analyzed; a Qt-owned
 layout produces a known potential leak false positive, with ownership checked by
 the dialog lifetime regressions.
 
 See [architecture and review](../docs/architecture-and-refactoring.md) and
 [OBS manual tests](../docs/obs-manual-test.md).
+
+The Opus-review fixes add rendered-video/packet-PTS calibration, delayed/B-frame
+anchors, pause/resume, fractional FPS, Undo/Redo limits and persistence, unsaved
+discard, collision-safe auto exports, plugin config and global hotkey migration,
+notification severity, Markdown privacy/escaping, CSV text/formula protection,
+auto JSON OFF edits, detailed transactional validation and actual locale tests.
+Real encoder/muxer accuracy and native keyboard/clipboard behavior still need the
+manual OBS steps.

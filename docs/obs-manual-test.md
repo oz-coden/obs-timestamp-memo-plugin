@@ -1,3 +1,49 @@
+## 今回の新版で優先する手順（2026-10-03）
+
+今回のH1/M2〜M6/L1〜L8修正はローカル・stub・CIで検証するが、実OBS確認はまだ。
+以下を最新手順とし、後半の旧版検証記録を新版の確認済みとは扱わない。
+設定と既存録画をバックアップし、テスト録画用folderで実施する。
+[時刻sourceの測定手順](recording-time-source.md)、[修正と制約](opus-review-fixes.md)も参照。
+
+1. OBS停止中にDLLとdata/localeを同じ新版へ更新する。起動を2回行い、起動直後に
+   crashしないこと。Dockは1つ、float/re-dock/close/再表示が正常であること。
+2. OBSの英語/日本語を切り替えて再起動し、UI、設定、警告、hotkey説明の表示を確認。
+   既存markerのlabel/commentは言語変更で書き換わらないこと。
+3. 初回移行前後の4slot/color/auto export設定を比較。settings.iniとhotkeys.jsonがOBSの
+   plugin_config内に生成されること。portable版ではportable configへ保存されること。
+   5hotkeysを設定し、scene collection/profile変更・再起動後も保持すること。
+4. 停止中の打刻は失敗通知、memoは消えないこと。録画開始直後の校正待ちwarningを確認し、
+   続いて4button、hotkey、memo Enterで打刻。Focus Memo hotkeyが入力欄を表示・focusすること。
+5. 通常通知OFFでも保存失敗・打刻失敗がstatus barへ表示されること。成功のOK画面は不要。
+6. label/comment編集、custom labelでtype変更、削除/全削除、Undo/Redoを順に実施。
+   操作ごとの表、JSON、Export、再読み込みの内容を比較。表での標準shortcutと
+   入力欄の文字Undo/Delete/Backspaceを別々に確認。次録画/別文書で古いUndoが作用しないこと。
+7. pause中に打刻し時刻が固定されること。resume後にgapが含まれないこと。
+   B-frame/lookahead有無、60/1と60000/1001、encoder負荷を変えて焼き込みcounterと
+   保存動画のPTSを照合する。H1は推定精度の実測、R6のsplit frame誤差は未解決として記録する。
+8. 短時間でsplitし、その直前/直後に打刻する。各segment内の位置とfirst PTSを比較。
+   split直後stop、dock非表示、メニュー/Exportを開いた状態でも混ざらないこと。
+9. modeless Export/Settingsを繰り返し開き、重複しないこと。Exportを開いた後に同一文書を
+   編集してDockのExportを再度押し、Clipboardに最新内容が出ること。file dialog中の
+   編集/splitではその操作開始時のsnapshotを保存すること。Copy成功にモーダルはないこと。
+10. 全8形式を保存。Markdownの絶対path非表示、pipe/backtick/改行の表示、CSVのIndex/IDと
+    formula文字の文字列化を確認。EDL/XMLのNLE importは将来実機検証として別記録し、互換済みとしない。
+11. 自動JSON OFFでstop後にcomment編集・Undoし、恒久JSONができずjournalが更新されること。
+    UnsavedのJSON別名保存を行い、救済先とcache整理を確認。明示Exportだけではcacheを消さないこと。
+12. テストfolderに動画同名のforeign CSV/EDL/XML/SRT/VTT/MD/chaptersを事前に置き、
+    auto export後もbytesが同じでUUID suffixの別名ができること。既存JSONはsession ID一致時のみ更新。
+13. 書込不能のsidecar/設定cache先で録画・打刻・split・stop・次録画を試す。
+    警告とUnsaved一覧で古い文書が残ること。保存可能な場所へのSave JSON as / Exportで救済。
+    対象名を確認してDiscard、取消、再起動後に破棄文書が戻らないこと。削除失敗では最新copyを保持。
+    全storage不能のデータはmemory-onlyなので、そのテスト中に救済せずOBSを閉じない。
+14. 古いcache、異sessionの同名JSON、不正JSONを使い、無断上書きせず別名保存できること。
+    JSONの1markerを不正にして、marker/field/expected/actualが表示され、表を保持すること。
+    正常legacy cache、途中の壊れたjournal、切断末尾をそれぞれ確認。
+15. 録画停止、OBS終了、再起動、履歴/復旧を確認。終了時crash、終了後OBS API呼出し、
+    多重callbackの兆候がないこと。通常hotkeyのlegacy importは読込collectionのみである点を確認。
+
+以下は旧版で行った検証・旧手順の履歴。
+
 # OBS実機確認手順
 
 OBS 32.2.1起動時のクラッシュに対する修正後は、まず通常起動を2回行い、録画していない起動直後に落ちないことを確認する。原因と回帰テストは[startup-and-ci-fixes.md](startup-and-ci-fixes.md)を参照。
@@ -95,3 +141,4 @@ OBSを終了してから置き換え、同じプラグインが二重にイン�
 - 続くコメント編集後のJSON（SHA256 `2DDDE0BE1E7A623A474D2B54B0A42140FB821CF4F6AFE81337D83754E0101852`）と再コピー結果も照合した。同じsession ID・35件のまま、ID 1=`確認用メモ`、2=`a`、20=`Yo`、33=`Hi`がJSONとMarkdownに一致し、他の31件のcommentは空。日本語メモの保存と編集後のClipboard出力への反映を確認した。その他の未確認操作は引き続き残る。
 - 編集後のJSON保存は`SessionStore::save()`の`QSaveFile`による文書全体の再生成・置換。既存JSONを先に削除する処理はなく、一時ファイルへの全量書き込みが成功した後にcommitする。保存成功後に削除するのは復旧cacheである。
 - 再開後の文書commit `7050bef`に対する[CI](https://github.com/oz-coden/obs-timestamp-memo-plugin/actions/runs/37016306206)も全3OS build/testとformatに成功した。
+
