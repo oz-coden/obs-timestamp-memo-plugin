@@ -50,6 +50,7 @@ target_include_directories(
   PRIVATE stubs ../src ../src/core ../src/persistence ../src/application ../src/exporters ../src/ui ../src/obs
 )
 target_link_libraries(regressions PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
+target_compile_definitions(regressions PRIVATE TEST_LOCALE_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/../data/locale")
 if(MSVC)
   target_compile_definitions(regressions PRIVATE _CRT_SECURE_NO_WARNINGS)
   target_compile_options(regressions PRIVATE /W4 /WX /EHsc /utf-8)

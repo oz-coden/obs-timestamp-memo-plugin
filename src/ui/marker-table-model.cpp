@@ -39,7 +39,7 @@ QVariant MarkerTableModel::data(const QModelIndex &index, int role) const
 		case Col_Comment:
 			return QString::fromStdString(m.comment);
 		case Col_Status:
-			return m.is_paused ? "PAUSED" : "REC";
+			return m.is_paused ? tr("PAUSED") : tr("REC");
 		default:
 			return QVariant();
 		}
@@ -85,15 +85,15 @@ QVariant MarkerTableModel::headerData(int section, Qt::Orientation orientation, 
 		case Col_Id:
 			return "#";
 		case Col_Timecode:
-			return "Timecode";
+			return tr("Timecode");
 		case Col_Frame:
-			return "Frame";
+			return tr("Frame");
 		case Col_Label:
-			return "Label";
+			return tr("Label");
 		case Col_Comment:
-			return "Comment / Memo";
+			return tr("Comment / Memo");
 		case Col_Status:
-			return "Status";
+			return tr("Status");
 		default:
 			return QVariant();
 		}

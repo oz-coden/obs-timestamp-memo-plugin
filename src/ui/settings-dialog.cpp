@@ -12,7 +12,7 @@
 
 SettingsDialog::SettingsDialog(PluginConfig &config, QWidget *parent) : QDialog(parent), config_(config)
 {
-	setWindowTitle("Timestamp Memo - Settings");
+	setWindowTitle(tr("Timestamp Memo - Settings"));
 	setMinimumWidth(440);
 	setup_ui();
 	load_values();
@@ -22,21 +22,21 @@ void SettingsDialog::setup_ui()
 {
 	auto *main_layout = new QVBoxLayout(this);
 
-	auto *grp_markers = new QGroupBox("Marker Configuration (4 Slots)", this);
+	auto *grp_markers = new QGroupBox(tr("Marker Configuration (4 Slots)"), this);
 	auto *markers_layout = new QVBoxLayout(grp_markers);
 
 	marker_slots_.resize(4);
 	for (int i = 0; i < 4; ++i) {
 		auto *row_layout = new QHBoxLayout();
-		auto *lbl = new QLabel(QString("Marker %1:").arg(i + 1), this);
+		auto *lbl = new QLabel(tr("Marker %1:").arg(i + 1), this);
 		lbl->setFixedWidth(70);
 
 		auto *edit = new QLineEdit(this);
-		edit->setPlaceholderText(QString("Label for Marker %1").arg(i + 1));
+		edit->setPlaceholderText(tr("Label for Marker %1").arg(i + 1));
 
 		auto *color_btn = new QPushButton(this);
 		color_btn->setFixedWidth(60);
-		color_btn->setText("Color");
+		color_btn->setText(tr("Color"));
 
 		connect(color_btn, &QPushButton::clicked, this, [this, i]() { onPickColor(i); });
 
@@ -51,18 +51,20 @@ void SettingsDialog::setup_ui()
 	}
 	main_layout->addWidget(grp_markers);
 
-	auto *grp_auto = new QGroupBox("Auto-Export on Recording Stop", this);
+	auto *grp_auto = new QGroupBox(tr("Auto-Export on Recording Stop"), this);
 	auto *auto_layout = new QVBoxLayout(grp_auto);
 
-	chk_auto_json_ = new QCheckBox("Export JSON (*.json) - Recommended", this);
-	chk_auto_csv_ = new QCheckBox("Export CSV (*.csv) - DaVinci / Premiere", this);
-	chk_auto_edl_ = new QCheckBox("Export CMX 3600 EDL (*.edl) - Timecode Markers", this);
-	chk_auto_srt_ = new QCheckBox("Export SubRip Subtitle (*.srt) - Subtitles", this);
-	chk_auto_vtt_ = new QCheckBox("Export WebVTT Subtitle (*.vtt) - HTML5 Video", this);
-	chk_auto_youtube_ = new QCheckBox("Export YouTube Chapters (*.chapters.txt)", this);
-	chk_auto_markdown_ = new QCheckBox("Export Markdown Document (*.md)", this);
-	chk_auto_xml_ = new QCheckBox("Export Premiere Pro XML (*.xml) - Sequence Markers", this);
+	chk_auto_json_ = new QCheckBox(tr("Automatically save final marker state as JSON (*.json)"), this);
+	chk_auto_csv_ = new QCheckBox(tr("Export CSV (*.csv) - Spreadsheet / marker list"), this);
+	chk_auto_edl_ = new QCheckBox(tr("Export CMX 3600 EDL (*.edl) - Timecode Markers"), this);
+	chk_auto_srt_ = new QCheckBox(tr("Export SubRip Subtitle (*.srt) - Subtitles"), this);
+	chk_auto_vtt_ = new QCheckBox(tr("Export WebVTT Subtitle (*.vtt) - HTML5 Video"), this);
+	chk_auto_youtube_ = new QCheckBox(tr("Export YouTube Chapters (*.chapters.txt)"), this);
+	chk_auto_markdown_ = new QCheckBox(tr("Export Markdown Document (*.md)"), this);
+	chk_auto_xml_ = new QCheckBox(tr("Export FCP-style XML (*.xml) - NLE compatibility unverified"), this);
 
+	chk_auto_json_->setToolTip(
+		tr("When off, edits still update recovery journals. Save JSON explicitly from Unsaved or Export."));
 	auto_layout->addWidget(chk_auto_json_);
 	auto_layout->addWidget(chk_auto_csv_);
 	auto_layout->addWidget(chk_auto_edl_);
@@ -73,24 +75,24 @@ void SettingsDialog::setup_ui()
 	auto_layout->addWidget(chk_auto_xml_);
 	main_layout->addWidget(grp_auto);
 
-	auto *grp_general = new QGroupBox("General Options", this);
+	auto *grp_general = new QGroupBox(tr("General Options"), this);
 	auto *gen_layout = new QVBoxLayout(grp_general);
-	chk_status_bar_ = new QCheckBox("Show notification in OBS status bar upon stamping", this);
+	chk_status_bar_ = new QCheckBox(tr("Show ordinary status notifications (warnings always shown)"), this);
 	gen_layout->addWidget(chk_status_bar_);
 	main_layout->addWidget(grp_general);
 
 	auto *btn_layout = new QHBoxLayout();
 
-	auto *btn_reset = new QPushButton("Reset to Defaults", this);
+	auto *btn_reset = new QPushButton(tr("Reset to Defaults"), this);
 	connect(btn_reset, &QPushButton::clicked, this, &SettingsDialog::onResetDefaultsClicked);
 	btn_layout->addWidget(btn_reset);
 
 	btn_layout->addStretch();
 
-	auto *btn_cancel = new QPushButton("Cancel", this);
+	auto *btn_cancel = new QPushButton(tr("Cancel"), this);
 	connect(btn_cancel, &QPushButton::clicked, this, &SettingsDialog::reject);
 
-	auto *btn_save = new QPushButton("Save Settings", this);
+	auto *btn_save = new QPushButton(tr("Save Settings"), this);
 	btn_save->setDefault(true);
 	connect(btn_save, &QPushButton::clicked, this, &SettingsDialog::onSaveClicked);
 
@@ -127,7 +129,7 @@ void SettingsDialog::load_values()
 void SettingsDialog::onResetDefaultsClicked()
 {
 	QPointer<SettingsDialog> guard(this);
-	auto res = QMessageBox::question(this, "Reset Settings", "Reset all settings to default values?",
+	auto res = QMessageBox::question(this, tr("Reset Settings"), tr("Reset all settings to default values?"),
 					 QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
 	if (!guard || res != QMessageBox::Yes)
 		return;
@@ -167,7 +169,7 @@ void SettingsDialog::onPickColor(int index)
 		return;
 
 	QColor initial(marker_slots_[index].current_color);
-	QColor color = QColorDialog::getColor(initial, this, QString("Select Color for Marker %1").arg(index + 1));
+	QColor color = QColorDialog::getColor(initial, this, tr("Select Color for Marker %1").arg(index + 1));
 	if (guard && color.isValid()) {
 		marker_slots_[index].current_color = color.name();
 		marker_slots_[index].color_btn->setStyleSheet(
@@ -184,7 +186,7 @@ void SettingsDialog::onSaveClicked()
 	for (int i = 0; i < 4 && i < static_cast<int>(marker_slots_.size()); ++i) {
 		QString label = marker_slots_[i].label_edit->text().trimmed();
 		if (label.isEmpty()) {
-			label = QString("Marker %1").arg(i + 1);
+			label = tr("Marker %1").arg(i + 1);
 		}
 		cfg.marker_types[i].label = label.toStdString();
 		cfg.marker_types[i].color = marker_slots_[i].current_color.toStdString();
@@ -202,8 +204,8 @@ void SettingsDialog::onSaveClicked()
 	cfg.show_status_bar_notification = chk_status_bar_->isChecked();
 
 	if (!config_.save(cfg)) {
-		QMessageBox::warning(this, "Settings Error",
-				     "Could not save settings. Your previous settings remain active.");
+		QMessageBox::warning(this, tr("Settings Error"),
+				     tr("Could not save settings. Your previous settings remain active."));
 		return;
 	}
 

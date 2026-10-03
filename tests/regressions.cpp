@@ -625,6 +625,36 @@ static void global_hotkeys(const QString &dir, QMainWindow &window)
 	CHECK(FakeObs::hotkeys() == 0 && FakeObs::callbacks() == 0 && FakeObs::save_callbacks() == 0);
 }
 
+static void localization(const QString &dir, QMainWindow &window)
+{
+	FakeObs::reset(&window, dir + "/locale-cache");
+	FakeObs::set_locale(true);
+	CHECK(obs_module_load());
+	auto *content = qobject_cast<DockWidget *>(FakeObs::dock()->widget());
+	CHECK(content->windowTitle().contains(QString::fromUtf8("マーカー")));
+	CHECK(FakeObs::hotkey_description(4).contains(QString::fromUtf8("フォーカス")));
+	CHECK(QCoreApplication::translate("TimestampMemo", "Unknown English fallback") == "Unknown English fallback");
+	CHECK(QCoreApplication::translate("OtherPlugin", "Settings") == "Settings");
+	CHECK(QCoreApplication::translate("TimestampMemo", "Field '%1': expected %2; actual %3.")
+		      .contains(QString::fromUtf8("実際の値")));
+	CHECK(QCoreApplication::translate("ExportDialog", "Failed to write to:\n%1")
+		      .contains(QString::fromUtf8("書き込めません")));
+	PluginConfig config(QSettings::IniFormat);
+	SettingsDialog settings(config);
+	CHECK(settings.windowTitle().contains(QString::fromUtf8("設定")));
+	auto *table = content->findChild<QTableView *>();
+	CHECK(table->model()->headerData(MarkerTableModel::Col_Comment, Qt::Horizontal).toString() ==
+	      QString::fromUtf8("コメント / メモ"));
+	FakeObs::start(dir + "/localized.mkv");
+	CHECK(content->controller().trigger_quick_marker(0));
+	CHECK(window.statusBar()->currentMessage().contains(QString::fromUtf8("記録しました")));
+	CHECK(content->controller().session().get_markers().front().label == "Marker 1");
+	FakeObs::stop();
+	obs_module_unload();
+	CHECK(QCoreApplication::translate("TimestampMemo", "Settings") == "Settings");
+	FakeObs::reset(&window, dir + "/fallback");
+}
+
 int main(int argc, char **argv)
 {
 	QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
@@ -645,6 +675,7 @@ int main(int argc, char **argv)
 	try {
 		notification_severity();
 		presentation_time(dir.path(), window);
+		localization(dir.path(), window);
 		global_hotkeys(dir.path(), window);
 		timecodes();
 		persistence(dir.path());

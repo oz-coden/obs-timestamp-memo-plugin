@@ -1,4 +1,5 @@
 #pragma once
+#include <QCoreApplication>
 
 #include "memo-marker.hpp"
 #include "recording-session.hpp"
@@ -34,7 +35,8 @@ public:
 	void notify(const std::string &message, int timeout = 3000,
 		    NotificationSeverity severity = NotificationSeverity::Info)
 	{
-		emit notificationRequested(QString::fromStdString(message), timeout, severity);
+		emit notificationRequested(QCoreApplication::translate("TimestampMemo", message.c_str()), timeout,
+					   severity);
 	}
 	void warn(const std::string &message, int timeout = 5000)
 	{

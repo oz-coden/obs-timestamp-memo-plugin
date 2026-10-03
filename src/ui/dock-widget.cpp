@@ -30,7 +30,7 @@ DockWidget::DockWidget(SessionController &controller, PluginConfig &config, Expo
 	  exporters_(exporters)
 {
 	setObjectName("ObsTimestampMemoDock");
-	setWindowTitle("Timestamp Memo & Markers");
+	setWindowTitle(tr("Timestamp Memo & Markers"));
 
 	setup_ui();
 
@@ -79,13 +79,13 @@ void DockWidget::setup_ui()
 	auto *status_layout = new QHBoxLayout(status_panel);
 	status_layout->setContentsMargins(6, 4, 6, 4);
 
-	lbl_status_ = new QLabel("■ STOPPED", status_panel);
+	lbl_status_ = new QLabel(tr("■ STOPPED"), status_panel);
 	lbl_status_->setStyleSheet("font-weight: bold; color: #888888;");
 
 	lbl_live_time_ = new QLabel("00:00:00.000", status_panel);
 	lbl_live_time_->setStyleSheet("font-family: monospace; font-weight: bold;");
 
-	lbl_video_name_ = new QLabel("No active recording", status_panel);
+	lbl_video_name_ = new QLabel(tr("No active recording"), status_panel);
 	lbl_video_name_->setStyleSheet("color: #aaaaaa; font-size: 11px;");
 	lbl_video_name_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
@@ -100,7 +100,7 @@ void DockWidget::setup_ui()
 	quick_marker_btns_.resize(4);
 
 	for (int i = 0; i < 4; ++i) {
-		auto *btn = new QPushButton(QString("Marker %1").arg(i + 1), container);
+		auto *btn = new QPushButton(tr("Marker %1").arg(i + 1), container);
 		btn->setCursor(Qt::PointingHandCursor);
 		btn->setFixedHeight(28);
 		btn->setStyleSheet("font-weight: bold; border-radius: 3px; padding: 2px 6px;");
@@ -116,11 +116,11 @@ void DockWidget::setup_ui()
 	memo_layout->setSpacing(4);
 
 	edit_memo_ = new QLineEdit(container);
-	edit_memo_->setPlaceholderText("Write memo & press Enter to stamp...");
+	edit_memo_->setPlaceholderText(tr("Write memo & press Enter to stamp..."));
 	edit_memo_->setFixedHeight(28);
 	connect(edit_memo_, &QLineEdit::returnPressed, this, &DockWidget::onAddMemoClicked);
 
-	btn_add_memo_ = new QPushButton("Stamp Memo", container);
+	btn_add_memo_ = new QPushButton(tr("Stamp Memo"), container);
 	btn_add_memo_->setFixedHeight(28);
 	btn_add_memo_->setCursor(Qt::PointingHandCursor);
 	connect(btn_add_memo_, &QPushButton::clicked, this, &DockWidget::onAddMemoClicked);
@@ -173,25 +173,25 @@ void DockWidget::setup_ui()
 		button->setDefaultAction(action);
 		bottom_layout->addWidget(button);
 	};
-	add_history_action("UndoMarkers", "Undo", QKeySequence::Undo, false);
-	add_history_action("RedoMarkers", "Redo", QKeySequence::Redo, true);
+	add_history_action("UndoMarkers", tr("Undo"), QKeySequence::Undo, false);
+	add_history_action("RedoMarkers", tr("Redo"), QKeySequence::Redo, true);
 
-	btn_open_ = new QPushButton("Open JSON...", container);
+	btn_open_ = new QPushButton(tr("Open JSON..."), container);
 	btn_open_->setFixedHeight(26);
 	connect(btn_open_, &QPushButton::clicked, this, &DockWidget::onOpenJsonClicked);
 
-	btn_export_ = new QPushButton("Export...", container);
+	btn_export_ = new QPushButton(tr("Export..."), container);
 	btn_export_->setFixedHeight(26);
 	connect(btn_export_, &QPushButton::clicked, this, &DockWidget::onExportClicked);
 
-	btn_clear_ = new QPushButton("Clear", container);
+	btn_clear_ = new QPushButton(tr("Clear"), container);
 	btn_clear_->setFixedHeight(26);
 	connect(btn_clear_, &QPushButton::clicked, this, &DockWidget::onClearClicked);
-	btn_unsaved_ = new QPushButton("Unsaved...", container);
+	btn_unsaved_ = new QPushButton(tr("Unsaved..."), container);
 	btn_unsaved_->setObjectName("UnsavedDocuments");
 	connect(btn_unsaved_, &QPushButton::clicked, this, &DockWidget::onUnsavedClicked);
 
-	btn_settings_ = new QPushButton("Settings", container);
+	btn_settings_ = new QPushButton(tr("Settings"), container);
 	btn_settings_->setFixedHeight(26);
 	connect(btn_settings_, &QPushButton::clicked, this, &DockWidget::onSettingsClicked);
 
@@ -249,13 +249,13 @@ void DockWidget::update_status_ui()
 	btn_add_memo_->setEnabled(controller.can_stamp());
 	const auto unsaved_count = controller.unsaved_documents().size() + (controller.has_unsaved_current() ? 1 : 0);
 	btn_unsaved_->setVisible(unsaved_count != 0);
-	btn_unsaved_->setText(QString("Unsaved (%1)...").arg(static_cast<qulonglong>(unsaved_count)));
+	btn_unsaved_->setText(tr("Unsaved (%1)...").arg(static_cast<qulonglong>(unsaved_count)));
 	bool has_markers = !controller.session().get_markers().empty();
 	if (!rec)
 		lbl_live_time_->setText("—");
 	btn_export_->setEnabled(has_markers);
 	btn_clear_->setEnabled(has_markers);
-	lbl_status_->setText(rec ? (controller.is_paused() ? "⏸ PAUSED" : "● REC") : "■ STOPPED");
+	lbl_status_->setText(rec ? (controller.is_paused() ? tr("⏸ PAUSED") : tr("● REC")) : tr("■ STOPPED"));
 	lbl_status_->setStyleSheet(QString("font-weight:bold;color:%1;")
 					   .arg(rec ? (controller.is_paused() ? "#f39c12" : "#e74c3c") : "#888888"));
 	lbl_video_name_->setText(controller.document_title());
@@ -267,9 +267,9 @@ void DockWidget::onUnsavedClicked()
 	QMenu menu;
 	auto add_document = [&](uint64_t id, const QString &title) {
 		auto *entry = menu.addMenu(title);
-		auto *save = entry->addAction("Save JSON as...");
-		auto *export_action = entry->addAction("Export snapshot...");
-		auto *discard = entry->addAction("Discard...");
+		auto *save = entry->addAction(tr("Save JSON as..."));
+		auto *export_action = entry->addAction(tr("Export snapshot..."));
+		auto *discard = entry->addAction(tr("Discard..."));
 		discard->setObjectName("DiscardUnsaved");
 		discard->setData(QVariant::fromValue<qulonglong>(id));
 		discard->setProperty("documentTitle", title);
@@ -289,20 +289,21 @@ void DockWidget::onUnsavedClicked()
 		const auto revision = controller_.document_revision();
 		const auto title = action->property("documentTitle").toString();
 		const auto answer = QMessageBox::question(
-			this, "Discard Unsaved Document",
-			QString("Discard the unsaved document '%1' and its recovery files? This cannot be undone.")
+			this, tr("Discard Unsaved Document"),
+			tr("Discard the unsaved document '%1' and its recovery files? This cannot be undone.")
 				.arg(title),
 			QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
 		if (!guard || answer != QMessageBox::Yes)
 			return;
 		if (id == 0 && controller_.document_revision() != revision) {
-			QMessageBox::warning(this, "Document Changed",
-					     "The current document changed. Choose the unsaved document again.");
+			QMessageBox::warning(this, tr("Document Changed"),
+					     tr("The current document changed. Choose the unsaved document again."));
 			return;
 		}
 		if (!controller_.discard_unsaved_document(id))
-			QMessageBox::warning(this, "Discard Failed",
-					     "Could not discard the document. Remaining recovery data was retained.");
+			QMessageBox::warning(
+				this, tr("Discard Failed"),
+				tr("Could not discard the document. Remaining recovery data was retained."));
 		return;
 	}
 	RecordingSession snapshot;
@@ -311,8 +312,8 @@ void DockWidget::onUnsavedClicked()
 			return;
 		snapshot = controller_.session();
 	} else if (!controller_.read_unsaved_document(id, snapshot)) {
-		QMessageBox::warning(this, "Recovery Error",
-				     "Could not read the unsaved document. Recovery files were retained.");
+		QMessageBox::warning(this, tr("Recovery Error"),
+				     tr("Could not read the unsaved document. Recovery files were retained."));
 		return;
 	}
 	if (action->objectName() != "SaveUnsaved") {
@@ -322,23 +323,23 @@ void DockWidget::onUnsavedClicked()
 	const auto revision = controller_.document_revision();
 	QFileInfo video(QString::fromStdString(snapshot.video_path()));
 	const auto path = QFileDialog::getSaveFileName(
-		this, "Save Unsaved JSON",
+		this, tr("Save Unsaved JSON"),
 		snapshot.video_path().empty() ? "markers.json"
 					      : video.dir().filePath(video.completeBaseName() + ".json"),
-		"JSON Files (*.json)");
+		tr("JSON Files (*.json)"));
 	if (!guard || path.isEmpty())
 		return;
 	// The current document can change while the native file dialog is open.
 	if (id == 0 && controller_.document_revision() != revision) {
-		QMessageBox::warning(this, "Document Changed",
-				     "The current document changed. Choose the unsaved document again.");
+		QMessageBox::warning(this, tr("Document Changed"),
+				     tr("The current document changed. Choose the unsaved document again."));
 		return;
 	}
 	const bool saved = id == 0 ? controller_.save_current_document(path.toStdString())
 				   : controller_.save_unsaved_document(id, path.toStdString());
 	if (!saved)
-		QMessageBox::warning(this, "Save Failed",
-				     "Could not save the document. Its recovery data was retained.");
+		QMessageBox::warning(this, tr("Save Failed"),
+				     tr("Could not save the document. Its recovery data was retained."));
 }
 
 void DockWidget::onQuickMarkerClicked(int index)
@@ -362,7 +363,8 @@ void DockWidget::onOpenJsonClicked()
 {
 	QPointer<DockWidget> guard(this);
 	if (controller_.is_recording()) {
-		QMessageBox::warning(this, "Action Blocked", "Cannot open another file while recording is active.");
+		QMessageBox::warning(this, tr("Action Blocked"),
+				     tr("Cannot open another file while recording is active."));
 		return;
 	}
 
@@ -374,9 +376,9 @@ void DockWidget::onOpenJsonClicked()
 	}
 
 	QString path = QFileDialog::getOpenFileName(
-		this, "Open Recording JSON or Cache", initial_dir,
-		"JSON / Cache Files (*.json *.tmp.jsonl);;JSON Files (*.json);;Cache Files (*.tmp.jsonl);;All Files "
-		"(*.*)");
+		this, tr("Open Recording JSON or Cache"), initial_dir,
+		tr("JSON / Cache Files (*.json *.tmp.jsonl);;JSON Files (*.json);;Cache Files (*.tmp.jsonl);;All Files "
+		   "(*.*)"));
 	if (!guard || path.isEmpty()) {
 		return;
 	}
@@ -388,24 +390,26 @@ void DockWidget::onOpenJsonClicked()
 		loaded = controller.recover_from_cache(path.toStdString());
 		if (loaded) {
 			update_status_ui();
-			controller_.notify("Recovered " + std::to_string(controller.session().get_markers().size()) +
-						   " markers from cache",
+			controller_.notify(tr("Recovered %1 markers from cache")
+						   .arg(controller.session().get_markers().size())
+						   .toStdString(),
 					   3000);
 		}
 	} else {
 		loaded = controller.load_from_json(path.toStdString());
 		if (loaded) {
 			update_status_ui();
-			controller_.notify("Loaded " + std::to_string(controller.session().get_markers().size()) +
-						   " markers from JSON",
+			controller_.notify(tr("Loaded %1 markers from JSON")
+						   .arg(controller.session().get_markers().size())
+						   .toStdString(),
 					   2000);
 		}
 	}
 
 	if (!loaded) {
-		QMessageBox::warning(this, "Open Error",
+		QMessageBox::warning(this, tr("Open Error"),
 				     controller.document_error().isEmpty()
-					     ? QString("Could not open the document. Current markers were retained.")
+					     ? tr("Could not open the document. Current markers were retained.")
 					     : controller.document_error());
 	}
 }
@@ -414,7 +418,7 @@ void DockWidget::onExportClicked()
 {
 	const auto &session = controller_.session();
 	if (session.get_markers().empty()) {
-		controller_.warn("There are no markers to export.", 2000);
+		controller_.warn(tr("There are no markers to export.").toStdString(), 2000);
 		return;
 	}
 
@@ -451,7 +455,7 @@ void DockWidget::onClearClicked()
 
 	const auto session_id = controller_.session().session_id();
 	QPointer<DockWidget> guard(this);
-	auto btn = QMessageBox::question(this, "Clear Markers", "Are you sure you want to clear all markers?",
+	auto btn = QMessageBox::question(this, tr("Clear Markers"), tr("Are you sure you want to clear all markers?"),
 					 QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
 	if (guard && btn == QMessageBox::Yes && controller_.session().session_id() == session_id) {
 		controller_.clear_markers();
@@ -484,13 +488,13 @@ void DockWidget::onContextMenuRequested(const QPoint &pos)
 	QPointer<DockWidget> guard(this);
 	QMenu menu;
 
-	QAction *act_copy_tc = menu.addAction("Copy Timecode");
-	QAction *act_copy_memo = menu.addAction("Copy Memo Text");
+	QAction *act_copy_tc = menu.addAction(tr("Copy Timecode"));
+	QAction *act_copy_memo = menu.addAction(tr("Copy Memo Text"));
 	menu.addSeparator();
-	QAction *act_copy_yt = menu.addAction("Copy YouTube Chapters (All)");
+	QAction *act_copy_yt = menu.addAction(tr("Copy YouTube Chapters (All)"));
 	menu.addSeparator();
 
-	QMenu *menu_type = menu.addMenu("Change Type");
+	QMenu *menu_type = menu.addMenu(tr("Change Type"));
 	const auto &cfg = config_.values();
 	for (int i = 0; i < 4 && i < static_cast<int>(cfg.marker_types.size()); ++i) {
 		QString label = QString::fromStdString(cfg.marker_types[i].label);
@@ -503,7 +507,7 @@ void DockWidget::onContextMenuRequested(const QPoint &pos)
 	}
 
 	menu.addSeparator();
-	QAction *act_del = menu.addAction("Delete Marker");
+	QAction *act_del = menu.addAction(tr("Delete Marker"));
 
 	QAction *selected = menu.exec(table_view_->viewport()->mapToGlobal(pos));
 	if (!guard || !selected)
@@ -517,7 +521,7 @@ void DockWidget::onContextMenuRequested(const QPoint &pos)
 	} else if (selected == act_copy_yt) {
 		std::string yt = YoutubeExporter::generate_chapters(session_snapshot);
 		QGuiApplication::clipboard()->setText(QString::fromStdString(yt));
-		controller_.notify("Copied YouTube chapters to clipboard", 2500);
+		controller_.notify(tr("Copied YouTube chapters to clipboard").toStdString(), 2500);
 	} else if (selected == act_del) {
 		if (controller.session().session_id() == session_id)
 			controller.delete_marker(marker.id);

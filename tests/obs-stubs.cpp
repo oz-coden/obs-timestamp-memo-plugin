@@ -5,6 +5,8 @@
 #include <map>
 #include <vector>
 #include <QByteArray>
+#include <QFile>
+#include <QHash>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -55,6 +57,8 @@ std::vector<std::pair<obs_frontend_event_cb, void *>> event_callbacks;
 std::vector<std::pair<obs_frontend_save_cb, void *>> save_callbacks;
 std::map<obs_hotkey_id, std::pair<hotkey_callback, void *>> hotkey_callbacks;
 obs_hotkey_id next_hotkey = 1;
+std::map<obs_hotkey_id, QString> descriptions;
+QHash<QByteArray, QByteArray> locale_values;
 std::map<obs_hotkey_id, QJsonArray> binding_values;
 void frontend_call()
 {
@@ -74,6 +78,11 @@ extern "C" {
 const char *PLUGIN_NAME = "obs-timestamp-memo";
 const char *PLUGIN_VERSION = "test";
 void obs_log(int, const char *, ...) {}
+}
+extern "C" const char *obs_module_text(const char *key)
+{
+	const auto it = locale_values.constFind(key);
+	return it == locale_values.cend() ? key : it->constData();
 }
 char *obs_module_config_path(const char *file)
 {
@@ -161,15 +170,17 @@ bool obs_get_video_info(obs_video_info *info)
 	*info = video;
 	return true;
 }
-obs_hotkey_id obs_hotkey_register_frontend(const char *, const char *, hotkey_callback callback, void *data)
+obs_hotkey_id obs_hotkey_register_frontend(const char *, const char *description, hotkey_callback callback, void *data)
 {
 	auto id = next_hotkey++;
 	hotkey_callbacks[id] = {callback, data};
+	descriptions[id] = QString::fromUtf8(description);
 	return id;
 }
 void obs_hotkey_unregister(obs_hotkey_id id)
 {
 	hotkey_callbacks.erase(id);
+	descriptions.erase(id);
 	binding_values.erase(id);
 }
 obs_data_array_t *obs_hotkey_save(obs_hotkey_id id)
@@ -275,8 +286,34 @@ void obs_frontend_remove_dock(const char *)
 }
 
 namespace FakeObs {
+void set_locale(bool japanese)
+{
+	locale_values.clear();
+	if (!japanese)
+		return;
+	QFile file(QString(TEST_LOCALE_DIRECTORY) + "/ja-JP.ini");
+	if (!file.open(QIODevice::ReadOnly))
+		return;
+	while (!file.atEnd()) {
+		const auto line = file.readLine().trimmed();
+		const auto split = line.indexOf("\"=\"");
+		if (split < 0 || !line.startsWith('"'))
+			continue;
+		const auto key = line.mid(1, split - 1);
+		const auto value =
+			QJsonDocument::fromJson("[" + line.mid(split + 2) + "]").array().first().toString().toUtf8();
+		locale_values[key] = value;
+	}
+}
+QString hotkey_description(int index)
+{
+	auto it = descriptions.begin();
+	std::advance(it, index);
+	return it == descriptions.end() ? QString() : it->second;
+}
 void reset(QMainWindow *window, const QString &dir)
 {
+	set_locale(false);
 	main_window = window;
 	cache_dir = dir;
 	recording = paused = exited = reject = false;

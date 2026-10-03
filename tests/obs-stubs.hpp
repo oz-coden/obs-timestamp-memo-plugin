@@ -5,6 +5,8 @@
 #include "obs-frontend-api.h"
 namespace FakeObs {
 void reset(QMainWindow *window, const QString &cache_dir);
+void set_locale(bool japanese);
+QString hotkey_description(int index);
 void start(const QString &path, int frames = 0);
 void stop();
 void split(const QString &path, int frames);

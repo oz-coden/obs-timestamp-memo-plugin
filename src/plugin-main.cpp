@@ -13,6 +13,16 @@
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
 
+MODULE_EXPORT const char *obs_module_name(void)
+{
+	return obs_module_text("PluginName");
+}
+
+MODULE_EXPORT const char *obs_module_description(void)
+{
+	return obs_module_text("PluginDescription");
+}
+
 static QPointer<DockWidget> g_dock_widget;
 static bool g_registered = false;
 static std::unique_ptr<PluginRuntime> g_runtime;
@@ -62,7 +72,10 @@ bool obs_module_load(void)
 	g_runtime = std::make_unique<PluginRuntime>(*main_win);
 	g_dock_widget = new DockWidget(g_runtime->controller, g_runtime->config, g_runtime->exporters, main_win);
 
-	if (!obs_frontend_add_dock_by_id("obs_timestamp_memo_dock", "Timestamp Memo & Markers", g_dock_widget.data())) {
+	if (!obs_frontend_add_dock_by_id(
+		    "obs_timestamp_memo_dock",
+		    QCoreApplication::translate("TimestampMemo", "Timestamp Memo & Markers").toUtf8().constData(),
+		    g_dock_widget.data())) {
 		delete g_dock_widget.data();
 		cleanup();
 		obs_frontend_remove_event_callback(on_frontend_event, nullptr);

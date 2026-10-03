@@ -39,8 +39,9 @@ void ObsBridge::initialize()
 				      "Timestamp Memo: Quick Marker 3", "Timestamp Memo: Quick Marker 4",
 				      "Timestamp Memo: Focus Memo Input"};
 	for (int i = 0; i < 5; ++i)
-		hotkey_ids_[i] =
-			obs_hotkey_register_frontend(names[i], descriptions[i], on_hotkey, &hotkey_bindings_[i]);
+		hotkey_ids_[i] = obs_hotkey_register_frontend(
+			names[i], QCoreApplication::translate("TimestampMemo", descriptions[i]).toUtf8().constData(),
+			on_hotkey, &hotkey_bindings_[i]);
 
 	hotkeys_path_ = config_path("hotkeys.json");
 	hotkeys_checked_ = load_global_hotkeys();

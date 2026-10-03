@@ -263,7 +263,10 @@ bool SessionController::trigger_quick_marker(int type_index, const std::string &
 	record_edit({{static_cast<size_t>(row), std::nullopt, m}});
 
 	std::string tc = m.active_timecode(session_.frame_rate());
-	std::string msg = "[" + label + "] " + tc + (paused ? " (Paused)" : "") + " Recorded";
+	std::string msg = QCoreApplication::translate("TimestampMemo", "[%1] %2%3 Recorded")
+				  .arg(QString::fromStdString(label), QString::fromStdString(tc),
+				       paused ? QCoreApplication::translate("TimestampMemo", " (Paused)") : QString())
+				  .toStdString();
 	notify(msg, 3000);
 	check_journal();
 
@@ -614,7 +617,10 @@ void SessionController::onRecordingFileSplit(const QString &path, uint64_t frame
 
 	emit markersReset(session_.get_markers(), session_.frame_rate());
 	emit videoPathResolved(QString::fromStdString(new_path));
-	notify("Recording split into: " + new_path, 3000);
+	notify(QCoreApplication::translate("TimestampMemo", "Recording split into: %1")
+		       .arg(QString::fromStdString(new_path))
+		       .toStdString(),
+	       3000);
 	check_journal();
 	if (!save_ok || !export_ok)
 		warn("Warning: Previous segment could not be saved. Check the recovery cache and OBS log.", 5000);
@@ -656,15 +662,21 @@ void SessionController::journal_update(uint32_t id)
 
 QString SessionController::document_title() const
 {
-	std::string path = history_path_.empty() ? session_.video_path() : history_path_;
-	const auto title = path.empty()
-				   ? (timeline_.active() ? "Resolving recording file..."
-							 : (session_.session_id().empty() ? "No session loaded"
-											  : "Unresolved recording"))
-				   : QFileInfo(QString::fromStdString(path)).fileName();
-	return title + (history_path_.empty() ? QString() : QString(recovered_ ? " (Recovered)" : " (Loaded)")) +
-	       (capture_blocked_ ? " (Unsaved; marker capture suspended)"
-				 : (has_unsaved_current() ? " (Unsaved)" : ""));
+	const auto path = history_path_.empty() ? session_.video_path() : history_path_;
+	const auto title = path.empty() ? QCoreApplication::translate("TimestampMemo",
+								      timeline_.active()
+									      ? "Resolving recording file..."
+									      : (session_.session_id().empty()
+											 ? "No session loaded"
+											 : "Unresolved recording"))
+					: QFileInfo(QString::fromStdString(path)).fileName();
+	return title +
+	       (history_path_.empty()
+			? QString()
+			: QCoreApplication::translate("TimestampMemo", recovered_ ? " (Recovered)" : " (Loaded)")) +
+	       (capture_blocked_ ? QCoreApplication::translate("TimestampMemo", " (Unsaved; marker capture suspended)")
+				 : (has_unsaved_current() ? QCoreApplication::translate("TimestampMemo", " (Unsaved)")
+							  : QString()));
 }
 
 void SessionController::record_edit(MarkerEditHistory::Command command)

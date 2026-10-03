@@ -5,8 +5,11 @@
 #include "session-store.hpp"
 #include "session-controller.hpp"
 #include "status-notifier.hpp"
+#include "obs-translator.hpp"
 class QMainWindow;
 class PluginRuntime {
+private:
+	ObsTranslator translator_; // Installed before services/views; removed after their destruction.
 public:
 	explicit PluginRuntime(QMainWindow &main);
 	void shutdown();

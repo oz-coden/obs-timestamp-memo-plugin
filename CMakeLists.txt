@@ -108,6 +108,7 @@ target_sources(
     src/exporters/xml-exporter.cpp
     src/obs/obs-bridge.hpp
     src/obs/obs-bridge.cpp
+    src/obs/obs-translator.cpp
     src/obs/status-notifier.hpp
     src/obs/status-notifier.cpp
     src/ui/marker-table-model.hpp
