@@ -77,7 +77,10 @@ RecordingSessionは保存文書として独立させたまま、任意のcapture
 - [主要修正CI](https://github.com/oz-coden/obs-timestamp-memo-plugin/actions/runs/37123109540)
   はWindows / macOS / Ubuntuのbuild、3層CTest、formatがすべて成功。
   [最終コード補強CI](https://github.com/oz-coden/obs-timestamp-memo-plugin/actions/runs/37123579767)も全3OS build/CTestとformat成功。
-  文書/UIテストcommitとmasterは別途CI結果を確認して統合する（Git履歴と最終報告参照）。
+  [完成branch最終CI](https://github.com/oz-coden/obs-timestamp-memo-plugin/actions/runs/37124355139)
+  (`2bb55f2`)も全3OS build/CTestとformat成功。未知のorigin/master変更がないことと
+  cleanを確認してmasterへfast-forward統合し、master上でWindows x64 build・CTest 3/3成功。
+  この最終記録は文書commitで保存し通常pushする。push後のmaster CIは最終報告とActionsを参照。
 - 新DLLはまだ実OBSへ入れていない。旧版の35件の実機検証結果を新版の確認済みとは扱わない。
   [今回の実OBS手順](obs-manual-test.md)を実施する。
 - NLE import、raw/video-only origin、pause cutoff、B-frame/lookahead/overload時の照合、
@@ -96,6 +99,9 @@ RecordingSessionは保存文書として独立させたまま、任意のcapture
 - `ea85d18`: OBS locale / Qt接続、英語・日本語UI。
 - `c70ed4e`: Discard失敗保護・Markdown改行・callback内の重複getter削減。
 - `28db58c`: Undo/Redo UIの振る舞いテスト、英日READMEと実OBS手順・本報告。
+- `2bb55f2`: 完成時点の検証結果と安全な再開手順の記録。
+
+統合後の検証記録も独立した文書commitとし、既存commitの改変やsquashは行わない。
 
 READMEは英語/日本語双方で今回の機能と制約を揃え、Linuxのbin/64bit/data配置、
 JSONの最終状態、modeless、Focus Memo、Undo、Unsaved、config/hotkey方式を更新した。

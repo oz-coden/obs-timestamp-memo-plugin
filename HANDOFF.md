@@ -1,3 +1,16 @@
+## 統合完了（2026-10-03）
+
+- 完成branch `codex/fix-opus-review` @ `2bb55f2` の
+  [最終CI](https://github.com/oz-coden/obs-timestamp-memo-plugin/actions/runs/37124355139)は、
+  Windows / macOS / Ubuntuのbuild・3層CTest・formatがすべて成功。
+- `origin/master` が開始時の `7050bef` のままで未知の変更がないこと、cleanと
+  基準masterからの `git diff --check` 成功を確認し、masterへfast-forwardで統合した。
+- master上でWindows x64 plugin/test buildとCTestを再実行し、**3/3成功**。
+  この記録は文書のみの追加commitとして保存し、通常pushする。以後のpush/CIの実状態は
+  `git status --short --branch`、`git log origin/master..master`とGitHub Actionsで確認する。
+- コード修正は完了。次は新版DLL/localeでの実OBS確認。下記旧記録の統合待ちは解消済み。
+  新版をまだinstallしていない点、H1/R6の実測、NLE未検証、M7未実装の制約は継続する。
+
 ## 新しい修正作業の記録（2026-10-03）
 
 旧HANDOFFはこの項目より下に保存する。今回の対象はOpusレビューの
