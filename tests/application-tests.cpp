@@ -310,9 +310,33 @@ static void codec_validation(const QString &dir)
 	auto legacy = valid;
 	legacy.remove("schema_version");
 	CHECK(SessionCodec::decode(legacy, decoded));
+	QString detail;
+	for (const auto field : {"label", "comment", "frame_index", "timestamp_ms", "is_paused"}) {
+		auto bad = valid;
+		auto array = bad["markers"].toArray();
+		auto item = array.first().toObject();
+		item[field] = QJsonObject();
+		array[0] = item;
+		bad["markers"] = array;
+		const auto prior = SessionCodec::encode(decoded);
+		CHECK(!SessionCodec::decode(bad, decoded, &detail));
+		CHECK(detail.contains("Marker #1") && detail.contains(field) && detail.contains("expected") &&
+		      detail.contains("actual"));
+		CHECK(SessionCodec::encode(decoded) == prior);
+		const auto file_path = dir + "/detailed-error.json";
+		QFile file(file_path);
+		CHECK(file.open(QIODevice::WriteOnly));
+		file.write(QJsonDocument(bad).toJson());
+		file.close();
+		SessionStore reader;
+		CHECK(!reader.load(file_path.toStdString(), decoded));
+		CHECK(reader.last_error() == detail);
+	}
+	CHECK(SessionCodec::decode(valid, decoded, &detail) && detail.isEmpty());
 	const auto before = SessionCodec::encode(decoded);
 	auto reject = [&](const QJsonObject &bad) {
-		CHECK(!SessionCodec::decode(bad, decoded));
+		CHECK(!SessionCodec::decode(bad, decoded, &detail));
+		CHECK(!detail.isEmpty());
 		CHECK(SessionCodec::encode(decoded) == before);
 	};
 	for (const auto key : {"session_id", "video_file_path", "started_at_utc", "video_info", "markers"}) {
@@ -408,6 +432,7 @@ static void codec_validation(const QString &dir)
 	legacy_file.close();
 	const auto legacy_before = SessionCodec::encode(decoded);
 	CHECK(!legacy_reader.recover(legacy_path.toStdString(), decoded));
+	CHECK(legacy_reader.last_error().contains("line 1") && legacy_reader.last_error().contains("schema_version"));
 	CHECK(SessionCodec::encode(decoded) == legacy_before);
 	auto recover = [&](const QJsonObject &op, bool success) {
 		const auto path = dir + "/codec-test.tmp.jsonl";

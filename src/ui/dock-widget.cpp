@@ -403,7 +403,10 @@ void DockWidget::onOpenJsonClicked()
 	}
 
 	if (!loaded) {
-		QMessageBox::warning(this, "Open Error", "Failed to parse recording JSON or cache file.");
+		QMessageBox::warning(this, "Open Error",
+				     controller.document_error().isEmpty()
+					     ? QString("Could not open the document. Current markers were retained.")
+					     : controller.document_error());
 	}
 }
 

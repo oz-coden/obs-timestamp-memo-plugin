@@ -68,6 +68,7 @@ public:
 
 	// Persistence / File ops
 	bool load_from_json(const std::string &path);
+	const QString &document_error() const { return document_error_; }
 	bool recover_from_cache(const std::string &cache_path);
 	const std::vector<UnsavedDocument> &unsaved_documents() const { return unsaved_documents_; }
 	bool has_unsaved_current() const { return document_unsaved_ && (!is_recording() || capture_blocked_); }
@@ -121,6 +122,7 @@ private:
 	QTimer poll_timer_;
 	std::string history_path_;
 	bool recovered_ = false;
+	QString document_error_;
 	bool apply_marker_update(const MemoMarker &candidate);
 	void record_edit(MarkerEditHistory::Command command);
 	bool apply_history(bool forward);

@@ -364,6 +364,7 @@ void SessionController::clear_markers()
 
 bool SessionController::load_from_json(const std::string &path)
 {
+	document_error_.clear();
 	if (is_recording() || store_.journaling())
 		return false;
 	SessionStore reader;
@@ -379,11 +380,13 @@ bool SessionController::load_from_json(const std::string &path)
 		emit markersReset(session_.get_markers(), session_.frame_rate());
 		return true;
 	}
+	document_error_ = reader.last_error();
 	return false;
 }
 
 bool SessionController::recover_from_cache(const std::string &cache_path)
 {
+	document_error_.clear();
 	if (is_recording() || store_.journaling())
 		return false;
 	SessionStore reader;
@@ -401,6 +404,7 @@ bool SessionController::recover_from_cache(const std::string &cache_path)
 		emit markersReset(session_.get_markers(), session_.frame_rate());
 		return true;
 	}
+	document_error_ = reader.last_error();
 	return false;
 }
 

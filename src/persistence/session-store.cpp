@@ -1,4 +1,6 @@
 #include "session-store.hpp"
+#include <QCoreApplication>
+#include <QJsonParseError>
 #include "session-codec.hpp"
 #include <algorithm>
 #include <QDir>
@@ -195,16 +197,34 @@ bool SessionStore::save(const RecordingSession &session, const std::string &targ
 }
 bool SessionStore::load(const std::string &path, RecordingSession &session)
 {
-	if (journaling())
+	last_error_.clear();
+	if (journaling()) {
+		last_error_ = QCoreApplication::translate("TimestampMemo",
+							  "Cannot open a document while its journal is active.");
 		return false;
+	}
 	QFile file(QString::fromStdString(path));
-	if (!file.open(QIODevice::ReadOnly))
+	if (!file.open(QIODevice::ReadOnly)) {
+		last_error_ = file.errorString();
 		return false;
-	auto bytes = file.readAll();
-	if (file.error() != QFileDevice::NoError)
+	}
+	const auto bytes = file.readAll();
+	if (file.error() != QFileDevice::NoError) {
+		last_error_ = file.errorString();
 		return false;
-	auto doc = QJsonDocument::fromJson(bytes);
-	if (!doc.isObject() || !SessionCodec::decode(doc.object(), session))
+	}
+	QJsonParseError parse;
+	const auto doc = QJsonDocument::fromJson(bytes, &parse);
+	if (!doc.isObject()) {
+		last_error_ = parse.error != QJsonParseError::NoError
+				      ? QCoreApplication::translate("TimestampMemo", "JSON syntax error at byte %1: %2")
+						.arg(parse.offset)
+						.arg(parse.errorString())
+				      : QCoreApplication::translate("TimestampMemo",
+								    "Expected a JSON object at the document root.");
+		return false;
+	}
+	if (!SessionCodec::decode(doc.object(), session, &last_error_))
 		return false;
 	cache_path_.clear();
 	source_path_ = path;
@@ -222,98 +242,140 @@ bool SessionStore::adopt_read(SessionStore &&reader)
 }
 bool SessionStore::recover(const std::string &path, RecordingSession &session)
 {
+	last_error_ =
+		QCoreApplication::translate("TimestampMemo", "Cannot recover a document while its journal is active.");
 	if (journaling())
 		return false;
+	last_error_.clear();
 	QFile file(QString::fromStdString(path));
-	if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+	if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+		last_error_ = file.errorString();
 		return false;
-	QJsonObject root;
-	std::vector<MemoMarker> markers;
-	std::unordered_set<uint32_t> ids;
-	bool header = false;
-	VideoFrameRate fps;
-	while (!file.atEnd()) {
-		auto raw = file.readLine(), line = raw.trimmed();
-		if (line.isEmpty())
-			continue;
-		auto doc = QJsonDocument::fromJson(line);
-		if (!doc.isObject()) {
-			if (file.atEnd() && !raw.endsWith('\n'))
-				break;
-			return false;
-		}
-		auto obj = doc.object();
-		const auto operation = obj.contains("op") ? obj["op"] : obj["type"];
-		if (!operation.isString())
-			return false;
-		auto op = operation.toString();
-		if (!header && op != "header")
-			return false;
-		if (op == "header") {
-			if (header)
-				return false;
-			header = true;
-			root["session_id"] = obj["session_id"];
-			root["video_file_path"] = obj["video_path"];
-			root["started_at_utc"] = obj["started_at"];
-			root["video_info"] = obj;
-			if (obj.contains("schema_version"))
-				root["schema_version"] = obj["schema_version"];
-			root["markers"] = QJsonArray();
-			RecordingSession checked;
-			if (!SessionCodec::decode(root, checked))
-				return false;
-			fps = checked.frame_rate();
-		} else if (op == "add" || op == "marker") {
-			MemoMarker m;
-			if ((obj.contains("marker") && !obj["marker"].isObject()) ||
-			    !SessionCodec::decode_marker(obj.contains("marker") ? obj["marker"].toObject() : obj, fps,
-							 m) ||
-			    !ids.insert(m.id).second)
-				return false;
-			if (obj.contains("row")) {
-				const auto row = obj["row"].toInteger(-1);
-				if (!obj["row"].isDouble() || row < 0 || obj["row"] != QJsonValue(row) ||
-				    static_cast<uint64_t>(row) > markers.size())
-					return false;
-				markers.insert(markers.begin() + static_cast<std::ptrdiff_t>(row), m);
-			} else
-				markers.push_back(m);
-		} else if (op == "update" || op == "delete") {
-			auto id = obj["id"].toInteger(-1);
-			if (!obj["id"].isDouble() || id <= 0 || obj["id"] != QJsonValue(id))
-				return false;
-			auto it = std::find_if(markers.begin(), markers.end(),
-					       [id](const auto &m) { return m.id == id; });
-			if (it == markers.end())
-				return false;
-			if (op == "delete") {
-				ids.erase(it->id);
-				markers.erase(it);
-			} else {
-				if (!SessionCodec::update_marker(obj, fps, *it))
-					return false;
-			}
-		} else if (op == "clear") {
-			markers.clear();
-			ids.clear();
-		} else if (op == "video_path") {
-			if (!obj["video_path"].isString())
-				return false;
-			root["video_file_path"] = obj["video_path"];
-		} else
-			return false;
 	}
-	if (file.error() != QFileDevice::NoError || !header)
-		return false;
-	QJsonArray array;
-	for (const auto &m : markers)
-		array.append(SessionCodec::encode_marker(m));
-	root["markers"] = array;
-	if (!SessionCodec::decode(root, session))
-		return false;
-	cache_path_ = path;
-	source_path_.clear();
-	healthy_ = true;
-	return true;
+	int line_number = 0;
+	const auto read_journal = [&]() -> bool {
+		QJsonObject root;
+		std::vector<MemoMarker> markers;
+		std::unordered_set<uint32_t> ids;
+		bool header = false;
+		VideoFrameRate fps;
+		while (!file.atEnd()) {
+			++line_number;
+			last_error_ = QCoreApplication::translate("TimestampMemo",
+								  "Invalid journal operation or marker reference.");
+			auto raw = file.readLine(), line = raw.trimmed();
+			if (line.isEmpty())
+				continue;
+			QJsonParseError parse;
+			auto doc = QJsonDocument::fromJson(line, &parse);
+			if (!doc.isObject()) {
+				if (file.atEnd() && !raw.endsWith('\n'))
+					break;
+				last_error_ =
+					QCoreApplication::translate("TimestampMemo", "JSON syntax error at byte %1: %2")
+						.arg(parse.offset)
+						.arg(parse.errorString());
+				return false;
+			}
+			auto obj = doc.object();
+			const auto operation = obj.contains("op") ? obj["op"] : obj["type"];
+			if (!operation.isString())
+				return false;
+			auto op = operation.toString();
+			if (!header && op != "header")
+				return false;
+			if (op == "header") {
+				if (header)
+					return false;
+				header = true;
+				root["session_id"] = obj["session_id"];
+				root["video_file_path"] = obj["video_path"];
+				root["started_at_utc"] = obj["started_at"];
+				root["video_info"] = obj;
+				if (obj.contains("schema_version"))
+					root["schema_version"] = obj["schema_version"];
+				root["markers"] = QJsonArray();
+				RecordingSession checked;
+				if (!SessionCodec::decode(root, checked, &last_error_))
+					return false;
+				fps = checked.frame_rate();
+			} else if (op == "add" || op == "marker") {
+				MemoMarker m;
+				if ((obj.contains("marker") && !obj["marker"].isObject()) ||
+				    !SessionCodec::decode_marker(obj.contains("marker") ? obj["marker"].toObject()
+											: obj,
+								 fps, m, &last_error_) ||
+				    !ids.insert(m.id).second) {
+					if (last_error_.isEmpty())
+						last_error_ = QCoreApplication::translate(
+							"TimestampMemo", "Expected a unique marker ID.");
+					const auto marker = obj.contains("marker") ? obj["marker"].toObject() : obj;
+					last_error_ = QCoreApplication::translate("TimestampMemo", "Marker ID %1: %2")
+							      .arg(marker["id"].toVariant().toString(), last_error_);
+					return false;
+				}
+				if (obj.contains("row")) {
+					const auto row = obj["row"].toInteger(-1);
+					if (!obj["row"].isDouble() || row < 0 || obj["row"] != QJsonValue(row) ||
+					    static_cast<uint64_t>(row) > markers.size())
+						return false;
+					markers.insert(markers.begin() + static_cast<std::ptrdiff_t>(row), m);
+				} else
+					markers.push_back(m);
+			} else if (op == "update" || op == "delete") {
+				auto id = obj["id"].toInteger(-1);
+				if (!obj["id"].isDouble() || id <= 0 || obj["id"] != QJsonValue(id))
+					return false;
+				auto it = std::find_if(markers.begin(), markers.end(),
+						       [id](const auto &m) { return m.id == id; });
+				if (it == markers.end())
+					return false;
+				if (op == "delete") {
+					ids.erase(it->id);
+					markers.erase(it);
+				} else {
+					if (!SessionCodec::update_marker(obj, fps, *it, &last_error_))
+						return false;
+				}
+			} else if (op == "clear") {
+				markers.clear();
+				ids.clear();
+			} else if (op == "video_path") {
+				if (!obj["video_path"].isString())
+					return false;
+				root["video_file_path"] = obj["video_path"];
+			} else {
+				last_error_ =
+					QCoreApplication::translate(
+						"TimestampMemo",
+						"Field 'op': expected header/add/update/delete/clear/video_path; actual '%1'.")
+						.arg(op.left(80));
+				return false;
+			}
+		}
+		if (file.error() != QFileDevice::NoError || !header)
+			return false;
+		QJsonArray array;
+		for (const auto &m : markers)
+			array.append(SessionCodec::encode_marker(m));
+		root["markers"] = array;
+		if (!SessionCodec::decode(root, session, &last_error_))
+			return false;
+		cache_path_ = path;
+		source_path_.clear();
+		healthy_ = true;
+		return true;
+	};
+	const bool ok = read_journal();
+	if (ok)
+		last_error_.clear();
+	else {
+		if (last_error_.isEmpty())
+			last_error_ = QCoreApplication::translate("TimestampMemo",
+								  "Duplicate marker ID or invalid operation.");
+		last_error_ = QCoreApplication::translate("TimestampMemo", "Journal line %1: %2")
+				      .arg(line_number)
+				      .arg(last_error_);
+	}
+	return ok;
 }

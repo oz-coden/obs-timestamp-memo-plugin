@@ -12,6 +12,7 @@ public:
 	bool finish(const RecordingSession &session, bool save_json, std::string *path = nullptr);
 	bool save(const RecordingSession &session, const std::string &path = "");
 	bool load(const std::string &path, RecordingSession &session);
+	const QString &last_error() const { return last_error_; }
 	bool recover(const std::string &path, RecordingSession &session);
 	// Commit a validated read without repeating I/O or losing the cache directory.
 	bool adopt_read(SessionStore &&reader);
@@ -33,4 +34,5 @@ private:
 	std::unique_ptr<QFile> file_;
 	std::unique_ptr<QTextStream> stream_;
 	bool healthy_ = false;
+	QString last_error_;
 };
