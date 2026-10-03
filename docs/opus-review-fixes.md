@@ -76,7 +76,8 @@ RecordingSessionは保存文書として独立させたまま、任意のcapture
   最新copy保持とMarkdownのCR改行を補強し、回帰テストを追加。
 - [主要修正CI](https://github.com/oz-coden/obs-timestamp-memo-plugin/actions/runs/37123109540)
   はWindows / macOS / Ubuntuのbuild、3層CTest、formatがすべて成功。
-  最終補強・文書commitとmasterは別途CI結果を確認して統合する（Git履歴と最終報告参照）。
+  [最終コード補強CI](https://github.com/oz-coden/obs-timestamp-memo-plugin/actions/runs/37123579767)も全3OS build/CTestとformat成功。
+  文書/UIテストcommitとmasterは別途CI結果を確認して統合する（Git履歴と最終報告参照）。
 - 新DLLはまだ実OBSへ入れていない。旧版の35件の実機検証結果を新版の確認済みとは扱わない。
   [今回の実OBS手順](obs-manual-test.md)を実施する。
 - NLE import、raw/video-only origin、pause cutoff、B-frame/lookahead/overload時の照合、
@@ -94,6 +95,7 @@ RecordingSessionは保存文書として独立させたまま、任意のcapture
 - `8fcf96e`: 詳細validationエラー、正常文書保持。
 - `ea85d18`: OBS locale / Qt接続、英語・日本語UI。
 - `c70ed4e`: Discard失敗保護・Markdown改行・callback内の重複getter削減。
+- `28db58c`: Undo/Redo UIの振る舞いテスト、英日READMEと実OBS手順・本報告。
 
 READMEは英語/日本語双方で今回の機能と制約を揃え、Linuxのbin/64bit/data配置、
 JSONの最終状態、modeless、Focus Memo、Undo、Unsaved、config/hotkey方式を更新した。

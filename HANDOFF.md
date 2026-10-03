@@ -1,3 +1,59 @@
+## 新しい修正作業の記録（2026-10-03）
+
+旧HANDOFFはこの項目より下に保存する。今回の対象はOpusレビューの
+H1 / M2〜M6 / L1〜L8。H2の未検証NLE構造、M1のchapters仕様、M7の配信実装は変更しない。
+
+- 開始時master `5cde664`、origin/master `7050bef`、cleanを確認して
+  `codex/fix-opus-review` を作成した。既存2件のローカル文書commitも保持。
+- 修正コードは `c70ed4e` まで完成し、各段階のWindows build/CTest 3/3成功。
+  `28db58c` でUndo/Redo UIテストと英日README・実OBS手順・修正報告を追加、CTest成功。
+- 主な変更: presentation-clock（H1）、marker-edit-historyとcontroller Undo/Discard/JSON OFF、
+  session-storeの安全保存と詳細error、plugin-config/hotkeys.jsonの移行、OBS locale adapter、
+  CSV/Markdown保護、自動Exportの衝突回避。原因・制約・commit一覧は
+  [今回の報告](docs/opus-review-fixes.md)に記載。
+- [主要CI](https://github.com/oz-coden/obs-timestamp-memo-plugin/actions/runs/37123109540)と
+  [コード最終補強CI](https://github.com/oz-coden/obs-timestamp-memo-plugin/actions/runs/37123579767)
+  はWindows/macOS/Ubuntuのbuild、全3層CTest、format成功。
+- ローカルの独立domain build/test 1/1、全clang-format 19.1.1 / gersemi 0.21.0成功。
+  clang-tidy全26実装fileエラーなし。Qt親layoutの既知のPotential leak誤検知1件のみ。
+- この記録の時点では完成branchの最終CIとmaster統合の確認を進める。
+  後続の「統合完了」記録とGitの実状態を優先する。勝手なreset/stash/履歴書換えは行わない。
+- **新版を実OBSへはまだinstallしていない**。旧DLLの35件の実データ確認を新版へ流用しない。
+  `.cache/obs-validation/install-reviewed-plugin.ps1` は旧hash固定のため新版にそのまま使わない。
+- R5 active-null-outputの意味は維持。H1で時間軸と必要なsplit基準は見直したが、
+  R6の実muxer境界測定は未解決。通常packetのPTS/CTS校正、raw/video-onlyの推定、
+  pause cutoff、NLE実機互換性、native操作は人間の実測が必要。
+- 設計方針: controllerが文書/revision/Undo/Unsavedを所有し、bridgeがOBS参照とclockを所有。
+  Undo履歴は128操作/約8MiB、storage全失敗でも文書をevictせず打刻だけ停止。
+  JSON OFFはcanonical JSONの自動保存を止めるだけで、recoveryは維持する。
+  既存非JSON自動Exportは上書きせずUUID suffixへ。設定/hotkeyはplugin global。
+
+### 次に行うこと（優先順）
+
+1. 最新HEADのCI、working tree、master/origin/masterの未知変更を確認。
+   統合が未完了ならCI成功を条件に通常fast-forward、master上でbuild/CTestして通常push。
+2. 新DLLとlocaleをOBS停止中に更新し、[新版実OBS手順](docs/obs-manual-test.md)を実施。
+3. 焼き込みcounterでH1のPTS照合・pause・split誤差を測定。
+4. portable configとhotkey移行、Undo/Discard/保存失敗救済、cache衝突を実OBSで確認。
+5. NLE importとM7 Streaming設計は将来の別作業。
+
+### 再開コマンド（PowerShell）
+
+```powershell
+git status --short --branch
+git log --oneline -12
+git fetch origin
+git log --oneline master..origin/master
+git diff --check
+$handoffCMake = 'C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin'
+& "$handoffCMake/cmake.exe" --build build_x64 --config RelWithDebInfo --parallel 4
+& "$handoffCMake/cmake.exe" --build build_tests --config RelWithDebInfo --parallel 4
+& "$handoffCMake/ctest.exe" --test-dir build_tests -C RelWithDebInfo --output-on-failure
+```
+
+CTestがminimal platform/PATHを設定する。regressions.exeの直接起動は避ける。
+実録画・OBS設定・添付JSONをテストfixtureで上書きしない。
+
 # 作業引き継ぎ（2026-10-02）
 
 ## 再開後の更新（2026-10-02）
