@@ -23,6 +23,8 @@ public:
 	std::string create_recovery_copy(const RecordingSession &session) const;
 	std::vector<std::string> recovery_copies() const;
 	void acknowledge_saved(const std::string &path);
+	bool discard_cache();
+	bool save_recovery_snapshot(const RecordingSession &session);
 
 private:
 	void close();

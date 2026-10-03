@@ -1,4 +1,7 @@
 #include "dock-widget.hpp"
+#include <QAction>
+#include <QKeySequence>
+#include <QToolButton>
 #include "export-dialog.hpp"
 #include "plugin-config.hpp"
 #include "session-controller.hpp"
@@ -148,6 +151,30 @@ void DockWidget::setup_ui()
 
 	auto *bottom_layout = new QHBoxLayout();
 	bottom_layout->setSpacing(4);
+	auto add_history_action = [this, bottom_layout](const char *name, const QString &label,
+							QKeySequence::StandardKey key, bool forward) {
+		auto *action = new QAction(label, this);
+		action->setObjectName(name);
+		action->setShortcuts(QKeySequence::keyBindings(key));
+		action->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+		addAction(action);
+		connect(action, &QAction::triggered, this, [this, forward]() {
+			if (forward)
+				controller_.redo();
+			else
+				controller_.undo();
+		});
+		auto update = [this, action, forward]() {
+			action->setEnabled(forward ? controller_.can_redo() : controller_.can_undo());
+		};
+		connect(&controller_, &SessionController::editHistoryChanged, this, update);
+		update();
+		auto *button = new QToolButton(this);
+		button->setDefaultAction(action);
+		bottom_layout->addWidget(button);
+	};
+	add_history_action("UndoMarkers", "Undo", QKeySequence::Undo, false);
+	add_history_action("RedoMarkers", "Redo", QKeySequence::Redo, true);
 
 	btn_open_ = new QPushButton("Open JSON...", container);
 	btn_open_->setFixedHeight(26);
@@ -242,6 +269,10 @@ void DockWidget::onUnsavedClicked()
 		auto *entry = menu.addMenu(title);
 		auto *save = entry->addAction("Save JSON as...");
 		auto *export_action = entry->addAction("Export snapshot...");
+		auto *discard = entry->addAction("Discard...");
+		discard->setObjectName("DiscardUnsaved");
+		discard->setData(QVariant::fromValue<qulonglong>(id));
+		discard->setProperty("documentTitle", title);
 		save->setData(QVariant::fromValue<qulonglong>(id));
 		export_action->setData(QVariant::fromValue<qulonglong>(id));
 		save->setObjectName("SaveUnsaved");
@@ -254,6 +285,26 @@ void DockWidget::onUnsavedClicked()
 	if (!guard || !action)
 		return;
 	const auto id = action->data().toULongLong();
+	if (action->objectName() == "DiscardUnsaved") {
+		const auto revision = controller_.document_revision();
+		const auto title = action->property("documentTitle").toString();
+		const auto answer = QMessageBox::question(
+			this, "Discard Unsaved Document",
+			QString("Discard the unsaved document '%1' and its recovery files? This cannot be undone.")
+				.arg(title),
+			QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+		if (!guard || answer != QMessageBox::Yes)
+			return;
+		if (id == 0 && controller_.document_revision() != revision) {
+			QMessageBox::warning(this, "Document Changed",
+					     "The current document changed. Choose the unsaved document again.");
+			return;
+		}
+		if (!controller_.discard_unsaved_document(id))
+			QMessageBox::warning(this, "Discard Failed",
+					     "Could not discard the document. Remaining recovery data was retained.");
+		return;
+	}
 	RecordingSession snapshot;
 	if (id == 0) {
 		if (!controller_.has_unsaved_current())

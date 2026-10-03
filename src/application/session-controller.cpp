@@ -254,6 +254,7 @@ bool SessionController::trigger_quick_marker(int type_index, const std::string &
 	document_unsaved_ = true;
 	++document_revision_;
 	int row = static_cast<int>(session_.get_markers().size()) - 1;
+	record_edit({{static_cast<size_t>(row), std::nullopt, m}});
 
 	std::string tc = m.active_timecode(session_.frame_rate());
 	std::string msg = "[" + label + "] " + tc + (paused ? " (Paused)" : "") + " Recorded";
@@ -304,10 +305,12 @@ bool SessionController::apply_marker_update(const MemoMarker &candidate)
 	const auto &markers = session_.get_markers();
 	for (size_t row = 0; row < markers.size(); ++row)
 		if (markers[row].id == candidate.id) {
+			const auto previous = markers[row];
 			if (!session_.update_marker(candidate.id, candidate.label, candidate.color, candidate.comment,
 						    candidate.type_index))
 				return false;
 			journal_update(candidate.id);
+			record_edit({{row, previous, candidate}});
 			++document_revision_;
 			persist_edits();
 			emit markerUpdated(candidate, static_cast<int>(row));
@@ -321,7 +324,9 @@ bool SessionController::delete_marker(uint32_t id)
 	const auto &markers = session_.get_markers();
 	for (size_t i = 0; i < markers.size(); ++i) {
 		if (markers[i].id == id) {
+			const auto previous = markers[i];
 			session_.delete_marker(id);
+			record_edit({{i, previous, std::nullopt}});
 			++document_revision_;
 			if (timeline_.active())
 				journal_current_ = store_.append({{"op", "delete"}, {"id", static_cast<qint64>(id)}}) &&
@@ -336,7 +341,14 @@ bool SessionController::delete_marker(uint32_t id)
 
 void SessionController::clear_markers()
 {
+	MarkerEditHistory::Command command;
+	const auto &markers = session_.get_markers();
+	for (size_t row = 0; row < markers.size(); ++row)
+		command.push_back({row, markers[row], std::nullopt});
+	if (command.empty())
+		return;
 	session_.clear_markers();
+	record_edit(std::move(command));
 	++document_revision_;
 	if (timeline_.active())
 		journal_current_ = store_.append({{"op", "clear"}}) && journal_current_;
@@ -352,6 +364,8 @@ bool SessionController::load_from_json(const std::string &path)
 	RecordingSession document;
 	if (reader.load(path, document) && preserve_current_document() && store_.adopt_read(std::move(reader))) {
 		session_ = std::move(document);
+		history_.clear();
+		emit editHistoryChanged();
 		journal_current_ = false;
 		++document_revision_;
 		history_path_ = path;
@@ -371,6 +385,8 @@ bool SessionController::recover_from_cache(const std::string &cache_path)
 	if (reader.recover(cache_path, document) && preserve_current_document() &&
 	    store_.adopt_read(std::move(reader))) {
 		session_ = std::move(document);
+		history_.clear();
+		emit editHistoryChanged();
 		journal_current_ = true;
 		++document_revision_;
 		history_path_ = cache_path;
@@ -387,12 +403,16 @@ void SessionController::persist_edits()
 	document_unsaved_ = true;
 	if (timeline_.active()) {
 		check_journal();
-	} else {
+	} else if (config_.values().auto_export.json) {
 		document_unsaved_ = !store_.save(session_);
 		if (document_unsaved_)
 			warn("Warning: Failed to save edited markers. Use Unsaved to save JSON elsewhere.", 5000);
 		// A closed journal cannot contain edits made after STOPPED/recovery.
 		journal_current_ = false;
+	} else {
+		journal_current_ = store_.save_recovery_snapshot(session_);
+		if (!journal_current_)
+			warn("Could not save recovery data for edited markers. Use Unsaved to save JSON elsewhere.");
 	}
 	emit unsavedDocumentsChanged();
 }
@@ -577,6 +597,8 @@ void SessionController::start_document(const std::string &path, const VideoFrame
 		return;
 	history_path_.clear();
 	recovered_ = false;
+	history_.clear();
+	emit editHistoryChanged();
 	session_.replace({path, QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString(),
 			  QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs).toStdString(), fps, width,
 			  height});
@@ -608,4 +630,97 @@ QString SessionController::document_title() const
 	return title + (history_path_.empty() ? QString() : QString(recovered_ ? " (Recovered)" : " (Loaded)")) +
 	       (capture_blocked_ ? " (Unsaved; marker capture suspended)"
 				 : (has_unsaved_current() ? " (Unsaved)" : ""));
+}
+
+void SessionController::record_edit(MarkerEditHistory::Command command)
+{
+	if (!history_.record(std::move(command)))
+		warn("This edit exceeds the Undo history limit. Earlier Undo history was cleared.");
+	emit editHistoryChanged();
+}
+
+bool SessionController::undo()
+{
+	return apply_history(false);
+}
+bool SessionController::redo()
+{
+	return apply_history(true);
+}
+
+bool SessionController::apply_history(bool forward)
+{
+	const auto *command = forward ? history_.redo_command() : history_.undo_command();
+	if (!command)
+		return false;
+	auto next = session_; // Transactional: an invalid command cannot partially change the document.
+	for (const auto &change : *command) {
+		const auto &from = forward ? change.before : change.after;
+		const auto &to = forward ? change.after : change.before;
+		const bool applied =
+			from && to ? next.update_marker(to->id, to->label, to->color, to->comment, to->type_index)
+				   : (to ? next.insert_marker(change.row, *to) : next.delete_marker(from->id));
+		if (!applied) {
+			warn("The edit could not be restored. The current document was retained.");
+			return false;
+		}
+	}
+	session_ = std::move(next);
+	if (timeline_.active()) {
+		for (const auto &change : *command) {
+			const auto &from = forward ? change.before : change.after;
+			const auto &to = forward ? change.after : change.before;
+			if (from && to)
+				journal_update(to->id);
+			else if (to)
+				journal_current_ = store_.append({{"op", "add"},
+								  {"marker", SessionCodec::encode_marker(*to)},
+								  {"row", static_cast<qint64>(change.row)}}) &&
+						   journal_current_;
+			else
+				journal_current_ =
+					store_.append({{"op", "delete"}, {"id", static_cast<qint64>(from->id)}}) &&
+					journal_current_;
+		}
+	}
+	if (forward)
+		history_.did_redo();
+	else
+		history_.did_undo();
+	++document_revision_;
+	persist_edits();
+	emit markersReset(session_.get_markers(), session_.frame_rate());
+	emit editHistoryChanged();
+	return true;
+}
+
+bool SessionController::discard_unsaved_document(uint64_t id)
+{
+	if (id == 0) {
+		if (!has_unsaved_current() || !store_.discard_cache())
+			return false;
+		document_unsaved_ = false;
+		journal_current_ = false;
+		session_.clear_markers();
+		history_.clear();
+		++document_revision_;
+		resume_capture();
+		emit markersReset(session_.get_markers(), session_.frame_rate());
+		emit editHistoryChanged();
+	} else {
+		auto entry = std::find_if(unsaved_documents_.begin(), unsaved_documents_.end(),
+					  [id](const auto &item) { return item.id == id; });
+		if (entry == unsaved_documents_.end())
+			return false;
+		for (const auto &path : {entry->recovery_path, entry->journal_path})
+			if (!path.empty() && QFile::exists(QString::fromStdString(path)) &&
+			    !QFile::remove(QString::fromStdString(path))) {
+				warn("Could not remove all recovery files. The unsaved entry was retained.");
+				return false;
+			}
+		unsaved_documents_.erase(entry);
+		resume_capture();
+	}
+	emit unsavedDocumentsChanged();
+	return true;
 }

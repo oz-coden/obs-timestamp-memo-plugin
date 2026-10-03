@@ -14,6 +14,7 @@
 #include <QTimer>
 #include "recording-gateway.hpp"
 #include "notification.hpp"
+#include "marker-edit-history.hpp"
 class PluginConfig;
 class ExporterRegistry;
 
@@ -60,6 +61,10 @@ public:
 				const std::string &comment);
 	bool delete_marker(uint32_t id);
 	void clear_markers();
+	bool undo();
+	bool redo();
+	bool can_undo() const { return history_.undo_command() != nullptr; }
+	bool can_redo() const { return history_.redo_command() != nullptr; }
 
 	// Persistence / File ops
 	bool load_from_json(const std::string &path);
@@ -70,6 +75,7 @@ public:
 	bool read_unsaved_document(uint64_t id, RecordingSession &document) const;
 	bool save_unsaved_document(uint64_t id, const std::string &path);
 	bool save_current_document(const std::string &path);
+	bool discard_unsaved_document(uint64_t id);
 
 	// Auto export
 	bool perform_auto_export(const std::string &base_video_path);
@@ -93,6 +99,7 @@ signals:
 	void focusMemoInputRequested();
 	void unsavedDocumentsChanged();
 	void recordTimeChanged(uint64_t milliseconds);
+	void editHistoryChanged();
 
 private:
 	void onRecordingStarted();
@@ -115,6 +122,9 @@ private:
 	std::string history_path_;
 	bool recovered_ = false;
 	bool apply_marker_update(const MemoMarker &candidate);
+	void record_edit(MarkerEditHistory::Command command);
+	bool apply_history(bool forward);
+	MarkerEditHistory history_;
 	void journal_update(uint32_t id);
 	void start_document(const std::string &path, const VideoFrameRate &fps, uint32_t width, uint32_t height);
 	bool initialized_ = false;

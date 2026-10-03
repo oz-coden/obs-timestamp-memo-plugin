@@ -54,6 +54,53 @@ void SessionStore::remove_cache()
 	if (!cache_path_.empty() && QFile::remove(QString::fromStdString(cache_path_)))
 		cache_path_.clear();
 }
+
+bool SessionStore::discard_cache()
+{
+	close();
+	if (!cache_path_.empty() && QFile::exists(QString::fromStdString(cache_path_)) &&
+	    !QFile::remove(QString::fromStdString(cache_path_)))
+		return false;
+	cache_path_.clear();
+	healthy_ = false;
+	return true;
+}
+
+bool SessionStore::save_recovery_snapshot(const RecordingSession &session)
+{
+	if (journaling())
+		return false;
+	if (cache_path_.empty()) {
+		QFileInfo video(QString::fromStdString(session.video_path()));
+		QDir dir = session.video_path().empty() ? QDir(QString::fromStdString(cache_directory_)) : video.dir();
+		if ((session.video_path().empty() && cache_directory_.empty()) || !dir.mkpath("."))
+			return false;
+		cache_path_ =
+			dir.filePath("edited." + QUuid::createUuid().toString(QUuid::WithoutBraces) + ".tmp.jsonl")
+				.toStdString();
+	}
+	QSaveFile file(QString::fromStdString(cache_path_));
+	if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+		return healthy_ = false;
+	auto header = SessionCodec::encode(session)["video_info"].toObject();
+	header["op"] = "header";
+	header["schema_version"] = "1.0.0";
+	header["session_id"] = QString::fromStdString(session.session_id());
+	header["video_path"] = QString::fromStdString(session.video_path());
+	header["started_at"] = QString::fromStdString(session.started_at());
+	auto write = [&file](const QJsonObject &object) {
+		const auto bytes = QJsonDocument(object).toJson(QJsonDocument::Compact) + '\n';
+		return file.write(bytes) == bytes.size();
+	};
+	bool success = write(header);
+	for (const auto &marker : session.get_markers())
+		success = success && write({{"op", "add"}, {"marker", SessionCodec::encode_marker(marker)}});
+	if (!success) {
+		file.cancelWriting();
+		return healthy_ = false;
+	}
+	return healthy_ = file.commit();
+}
 bool SessionStore::begin(const RecordingSession &session)
 {
 	close();
@@ -224,7 +271,14 @@ bool SessionStore::recover(const std::string &path, RecordingSession &session)
 							 m) ||
 			    !ids.insert(m.id).second)
 				return false;
-			markers.push_back(m);
+			if (obj.contains("row")) {
+				const auto row = obj["row"].toInteger(-1);
+				if (!obj["row"].isDouble() || row < 0 || obj["row"] != QJsonValue(row) ||
+				    static_cast<uint64_t>(row) > markers.size())
+					return false;
+				markers.insert(markers.begin() + static_cast<std::ptrdiff_t>(row), m);
+			} else
+				markers.push_back(m);
 		} else if (op == "update" || op == "delete") {
 			auto id = obj["id"].toInteger(-1);
 			if (!obj["id"].isDouble() || id <= 0 || obj["id"] != QJsonValue(id))

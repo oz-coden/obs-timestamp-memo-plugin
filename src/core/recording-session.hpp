@@ -18,6 +18,7 @@ public:
 	bool update_marker(uint32_t id, const std::string &label, const std::string &color, const std::string &comment,
 			   int type = -1);
 	bool delete_marker(uint32_t id);
+	bool insert_marker(size_t row, const MemoMarker &marker);
 	void clear_markers() { markers_.clear(); }
 	void set_video_path(const std::string &path) { metadata_.video_path = path; }
 	const std::string &video_path() const { return metadata_.video_path; }

@@ -67,3 +67,13 @@ bool RecordingSession::delete_marker(uint32_t id)
 	markers_.erase(it);
 	return true;
 }
+
+bool RecordingSession::insert_marker(size_t row, const MemoMarker &marker)
+{
+	if (!marker.id || row > markers_.size() ||
+	    std::any_of(markers_.begin(), markers_.end(), [&marker](const auto &m) { return m.id == marker.id; }))
+		return false;
+	markers_.insert(markers_.begin() + static_cast<std::ptrdiff_t>(row), marker);
+	next_marker_id_ = std::max(next_marker_id_, static_cast<uint64_t>(marker.id) + 1);
+	return true;
+}

@@ -1,5 +1,6 @@
 #include "recording-session.hpp"
 #include "recording-timeline.hpp"
+#include "marker-edit-history.hpp"
 #include "text-formats.hpp"
 #include <iostream>
 #include <stdexcept>
@@ -71,6 +72,20 @@ int main()
 		CHECK(cues[1].end_ms == 2000 && cues[2].end_ms == 4500);
 		CHECK(subtitles.get_markers().front().timestamp_ms == 2000);
 		CHECK(TextFormats::subtitle_cues(RecordingSession{}).empty());
+		MarkerEditHistory edits;
+		for (size_t i = 0; i < MarkerEditHistory::max_commands + 5; ++i)
+			CHECK(edits.record({{0, std::nullopt, marker}}));
+		size_t available = 0;
+		while (edits.undo_command()) {
+			edits.did_undo();
+			++available;
+		}
+		CHECK(available == MarkerEditHistory::max_commands);
+		CHECK(edits.redo_command());
+		CHECK(edits.record({{0, std::nullopt, marker}}) && !edits.redo_command());
+		auto oversized = marker;
+		oversized.comment.assign(MarkerEditHistory::max_bytes, 'x');
+		CHECK(!edits.record({{0, std::nullopt, oversized}}) && !edits.undo_command());
 		std::cout
 			<< "PASS pure FPS/timecodes, lifecycle/segments, document operations/snapshots and text export\n";
 		return 0;

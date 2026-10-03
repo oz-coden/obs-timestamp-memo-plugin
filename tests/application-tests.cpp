@@ -433,6 +433,107 @@ static void codec_validation(const QString &dir)
 	recover({{"op", "unsupported"}}, false);
 	recover({{"op", 1}}, false);
 }
+static void edit_history_and_recovery(const QString &dir)
+{
+	PluginConfig config(QSettings::IniFormat);
+	auto settings = config.values();
+	settings.auto_export.json = false;
+	CHECK(config.save(settings));
+	SessionStore store((dir + "/undo-cache").toStdString());
+	ExporterRegistry exporters;
+	FakeGateway gateway;
+	SessionController controller(gateway, config, store, exporters);
+	controller.initialize();
+	gateway.value.path = (dir + "/undo.mkv").toStdString();
+	gateway.start();
+	CHECK(controller.trigger_quick_marker(0, "first"));
+	const auto first = controller.session().get_markers().front();
+	gateway.value.total_frames = 60;
+	CHECK(controller.trigger_quick_marker(1, "second"));
+	const auto second = controller.session().get_markers().back();
+	CHECK(controller.delete_marker(first.id));
+	CHECK(controller.undo());
+	CHECK(controller.session().get_markers().front().id == first.id);
+	CHECK(controller.session().get_markers().back().id == second.id);
+	RecordingSession recovered;
+	SessionStore reader;
+	CHECK(reader.recover(store.cache_path(), recovered));
+	CHECK(recovered.get_markers().front().id == first.id);
+	CHECK(controller.redo() && controller.undo());
+	CHECK(controller.update_marker_data(first.id, "custom", "", "edited"));
+	CHECK(controller.update_marker_type(first.id, 3));
+	CHECK(controller.undo());
+	CHECK(controller.session().get_markers().front().type_index == 0);
+	CHECK(controller.undo());
+	CHECK(controller.session().get_markers().front().comment == "first");
+	CHECK(controller.redo());
+	CHECK(controller.session().get_markers().front().label == "custom");
+	CHECK(controller.delete_marker(second.id));
+	CHECK(!controller.can_redo());
+	controller.clear_markers();
+	CHECK(controller.undo() && controller.session().get_markers().size() == 1);
+	gateway.stop();
+	CHECK(!QFile::exists(dir + "/undo.json"));
+	const auto journal = store.cache_path();
+	CHECK(controller.update_marker_data(first.id, "custom", "", "stopped edit"));
+	CHECK(!QFile::exists(dir + "/undo.json") && QFile::exists(QString::fromStdString(journal)));
+	CHECK(reader.recover(journal, recovered));
+	CHECK(recovered.get_markers().front().comment == "stopped edit");
+	CHECK(controller.undo());
+	CHECK(reader.recover(journal, recovered));
+	CHECK(recovered.get_markers().front().comment == "edited");
+	CHECK(controller.redo());
+	const auto rescue = (dir + "/undo-explicit.json").toStdString();
+	CHECK(controller.save_current_document(rescue));
+	CHECK(reader.load(rescue, recovered));
+	CHECK(recovered.get_markers().front().comment == "stopped edit");
+	settings.auto_export.json = true;
+	CHECK(config.save(settings));
+	CHECK(controller.undo());
+	CHECK(reader.load(rescue, recovered));
+	CHECK(recovered.get_markers().front().comment == "edited");
+	gateway.value.path = (dir + "/undo-new.mkv").toStdString();
+	gateway.start();
+	CHECK(!controller.can_undo() && !controller.can_redo());
+	CHECK(controller.trigger_quick_marker(0));
+	CHECK(controller.undo() && controller.session().get_markers().empty());
+	CHECK(controller.redo() && controller.session().get_markers().size() == 1);
+	gateway.split((dir + "/undo-split.mkv").toStdString(), 60);
+	CHECK(!controller.can_undo());
+	gateway.stop();
+	CHECK(config.save(PluginSettings{}));
+}
+
+static void discard_documents(const QString &dir)
+{
+	PluginConfig config(QSettings::IniFormat);
+	CHECK(config.save(PluginSettings{}));
+	SessionStore store((dir + "/discard-cache").toStdString());
+	ExporterRegistry exporters;
+	FakeGateway gateway;
+	SessionController controller(gateway, config, store, exporters);
+	controller.initialize();
+	CHECK(QDir().mkpath(dir + "/discard.json"));
+	gateway.value.path = (dir + "/discard.mkv").toStdString();
+	gateway.start();
+	CHECK(controller.trigger_quick_marker(0, "discard only this"));
+	const auto journal = store.cache_path();
+	gateway.split((dir + "/discard-next.mkv").toStdString(), 60);
+	CHECK(controller.unsaved_documents().size() == 1);
+	CHECK(controller.discard_unsaved_document(controller.unsaved_documents().front().id));
+	CHECK(controller.unsaved_documents().empty());
+	CHECK(!QFile::exists(QString::fromStdString(journal)));
+	CHECK(!controller.discard_unsaved_document(9999));
+	CHECK(controller.trigger_quick_marker(0, "current remains"));
+	CHECK(!controller.discard_unsaved_document(0));
+	gateway.stop();
+	CHECK(controller.session().get_markers().front().comment == "current remains");
+	SessionController restarted(gateway, config, store, exporters);
+	controller.shutdown();
+	restarted.initialize();
+	CHECK(restarted.unsaved_documents().empty());
+}
+
 int main(int argc, char **argv)
 {
 	QCoreApplication app(argc, argv);
@@ -442,6 +543,8 @@ int main(int argc, char **argv)
 	QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, dir.path() + "/settings");
 	try {
 		CHECK(dir.isValid());
+		edit_history_and_recovery(dir.path());
+		discard_documents(dir.path());
 		PluginConfig config(QSettings::IniFormat);
 		CHECK(config.load());
 		auto settings = config.values();
