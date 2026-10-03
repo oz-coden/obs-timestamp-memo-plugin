@@ -19,6 +19,7 @@ public:
 	void drain_pending_events() override;
 
 	std::string recovery_cache_directory() const;
+	std::string config_path(const char *file) const;
 	void initialize() override;
 	void shutdown() override;
 
@@ -54,4 +55,9 @@ private:
 	obs_output_t *recording_output_ = nullptr;
 	std::string recording_path_;
 	std::atomic<uint64_t> output_generation_{0};
+	std::string hotkeys_path_;
+	bool hotkeys_checked_ = false, hotkeys_writable_ = true;
+	bool load_global_hotkeys();
+	bool save_global_hotkeys();
+	void load_hotkey_bindings(obs_data_t *data);
 };

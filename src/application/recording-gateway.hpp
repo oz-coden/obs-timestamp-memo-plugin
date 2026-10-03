@@ -25,4 +25,5 @@ signals:
 	void recordingFileChanged(const QString &path, uint64_t total_frames);
 	void quickMarkerRequested(int index);
 	void focusMemoRequested();
+	void integrationWarning(const QString &message);
 };

@@ -5,9 +5,18 @@
 #include <map>
 #include <vector>
 #include <QByteArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
 
 struct obs_data_t {
 	std::string path;
+	QJsonObject values;
+	QByteArray json;
+	bool allocated = false;
+};
+struct obs_data_array_t {
+	QJsonArray values;
 };
 struct obs_encoder_t {
 	uint32_t divisor = 1, width = 1920, height = 1080;
@@ -43,6 +52,7 @@ std::vector<std::pair<obs_frontend_event_cb, void *>> event_callbacks;
 std::vector<std::pair<obs_frontend_save_cb, void *>> save_callbacks;
 std::map<obs_hotkey_id, std::pair<hotkey_callback, void *>> hotkey_callbacks;
 obs_hotkey_id next_hotkey = 1;
+std::map<obs_hotkey_id, QJsonArray> binding_values;
 void frontend_call()
 {
 	if (exited)
@@ -62,9 +72,9 @@ const char *PLUGIN_NAME = "obs-timestamp-memo";
 const char *PLUGIN_VERSION = "test";
 void obs_log(int, const char *, ...) {}
 }
-char *obs_module_config_path(const char *)
+char *obs_module_config_path(const char *file)
 {
-	QByteArray path = cache_dir.toUtf8();
+	QByteArray path = (std::strcmp(file, "cache") == 0 ? cache_dir : cache_dir + "/" + file).toUtf8();
 	auto *result = static_cast<char *>(std::malloc(static_cast<size_t>(path.size()) + 1));
 	std::memcpy(result, path.constData(), static_cast<size_t>(path.size()) + 1);
 	return result;
@@ -101,7 +111,28 @@ const char *obs_data_get_string(obs_data_t *ptr, const char *key)
 {
 	return std::strcmp(key, "path") == 0 ? ptr->path.c_str() : "";
 }
-void obs_data_release(obs_data_t *) {}
+void obs_data_release(obs_data_t *data)
+{
+	if (data && data->allocated)
+		delete data;
+}
+obs_data_t *obs_data_create()
+{
+	auto *data = new obs_data_t;
+	data->allocated = true;
+	return data;
+}
+obs_data_t *obs_data_create_from_json(const char *json)
+{
+	auto *data = obs_data_create();
+	data->values = QJsonDocument::fromJson(json).object();
+	return data;
+}
+const char *obs_data_get_json(obs_data_t *data)
+{
+	data->json = QJsonDocument(data->values).toJson();
+	return data->json.constData();
+}
 bool obs_get_video_info(obs_video_info *info)
 {
 	++metadata_query_count;
@@ -119,18 +150,28 @@ obs_hotkey_id obs_hotkey_register_frontend(const char *, const char *, hotkey_ca
 void obs_hotkey_unregister(obs_hotkey_id id)
 {
 	hotkey_callbacks.erase(id);
+	binding_values.erase(id);
 }
-obs_data_array_t *obs_hotkey_save(obs_hotkey_id)
+obs_data_array_t *obs_hotkey_save(obs_hotkey_id id)
 {
-	return nullptr;
+	return new obs_data_array_t{binding_values[id]};
 }
-void obs_hotkey_load(obs_hotkey_id, obs_data_array_t *) {}
-void obs_data_set_array(obs_data_t *, const char *, obs_data_array_t *) {}
-obs_data_array_t *obs_data_get_array(obs_data_t *, const char *)
+void obs_hotkey_load(obs_hotkey_id id, obs_data_array_t *data)
 {
-	return nullptr;
+	binding_values[id] = data ? data->values : QJsonArray{};
 }
-void obs_data_array_release(obs_data_array_t *) {}
+void obs_data_set_array(obs_data_t *data, const char *key, obs_data_array_t *array)
+{
+	data->values[key] = array ? array->values : QJsonArray{};
+}
+obs_data_array_t *obs_data_get_array(obs_data_t *data, const char *key)
+{
+	return new obs_data_array_t{data->values[key].toArray()};
+}
+void obs_data_array_release(obs_data_array_t *data)
+{
+	delete data;
+}
 signal_handler_t *obs_output_get_signal_handler(obs_output_t *ptr)
 {
 	return &ptr->handler;
@@ -278,6 +319,34 @@ int metadata_queries()
 void video_info_available(bool available)
 {
 	have_video_info = available;
+}
+void set_hotkey_binding(int index, const QString &key)
+{
+	auto it = hotkey_callbacks.begin();
+	std::advance(it, index);
+	if (it != hotkey_callbacks.end())
+		binding_values[it->first] = QJsonArray{QJsonObject{{"key", key}}};
+}
+QString hotkey_binding(int index)
+{
+	auto it = hotkey_callbacks.begin();
+	std::advance(it, index);
+	if (it == hotkey_callbacks.end() || binding_values[it->first].isEmpty())
+		return {};
+	return binding_values[it->first].first().toObject()["key"].toString();
+}
+void load_scene_hotkeys(const QString &key)
+{
+	obs_data_t data;
+	data.values["hotkey_marker_1"] = QJsonArray{QJsonObject{{"key", key}}};
+	for (const auto &callback : ::save_callbacks)
+		callback.first(&data, false, callback.second);
+}
+void save_scene_hotkeys()
+{
+	obs_data_t data;
+	for (const auto &callback : ::save_callbacks)
+		callback.first(&data, true, callback.second);
 }
 void hotkey(int index)
 {

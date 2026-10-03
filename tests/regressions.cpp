@@ -521,6 +521,55 @@ static void notification_severity()
 	CHECK(config.save(settings));
 }
 
+static void global_hotkeys(const QString &dir, QMainWindow &window)
+{
+	const auto home = dir + "/global-hotkeys";
+	FakeObs::reset(&window, home);
+	{
+		ObsBridge bridge;
+		bridge.initialize();
+		CHECK(FakeObs::recording_output_queries() == 0);
+		FakeObs::load_scene_hotkeys("LEGACY");
+		CHECK(FakeObs::hotkey_binding(0) == "LEGACY");
+		CHECK(QFile::exists(home + "/hotkeys.json"));
+		FakeObs::set_hotkey_binding(0, "GLOBAL");
+		FakeObs::set_hotkey_binding(4, "FOCUS");
+		FakeObs::save_scene_hotkeys();
+		FakeObs::load_scene_hotkeys("DIFFERENT-COLLECTION");
+		CHECK(FakeObs::hotkey_binding(0) == "GLOBAL");
+		CHECK(FakeObs::hotkey_binding(4) == "FOCUS");
+		bridge.shutdown();
+	}
+	FakeObs::reset(&window, home);
+	{
+		ObsBridge bridge;
+		bridge.initialize();
+		CHECK(FakeObs::hotkey_binding(0) == "GLOBAL");
+		CHECK(FakeObs::hotkey_binding(4) == "FOCUS");
+		FakeObs::load_scene_hotkeys("NEW-COLLECTION");
+		CHECK(FakeObs::hotkey_binding(0) == "GLOBAL");
+		bridge.shutdown();
+	}
+	const auto corrupt_home = dir + "/corrupt-hotkeys";
+	CHECK(QDir().mkpath(corrupt_home));
+	write_file(corrupt_home + "/hotkeys.json", "{corrupt");
+	FakeObs::reset(&window, corrupt_home);
+	{
+		ObsBridge bridge;
+		int warnings = 0;
+		QObject::connect(&bridge, &RecordingGateway::integrationWarning,
+				 [&warnings](const QString &) { ++warnings; });
+		bridge.initialize();
+		CHECK(warnings == 1);
+		FakeObs::load_scene_hotkeys("MUST-NOT-OVERWRITE");
+		FakeObs::save_scene_hotkeys();
+		bridge.shutdown();
+		CHECK(read_file(corrupt_home + "/hotkeys.json") == "{corrupt");
+	}
+	FakeObs::reset(&window, dir + "/fallback");
+	CHECK(FakeObs::hotkeys() == 0 && FakeObs::callbacks() == 0 && FakeObs::save_callbacks() == 0);
+}
+
 int main(int argc, char **argv)
 {
 	QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
@@ -540,6 +589,7 @@ int main(int argc, char **argv)
 	FakeObs::reset(&window, dir.path() + "/fallback");
 	try {
 		notification_severity();
+		global_hotkeys(dir.path(), window);
 		timecodes();
 		persistence(dir.path());
 		journaling(dir.path());

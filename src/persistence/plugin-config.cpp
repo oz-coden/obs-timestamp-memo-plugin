@@ -4,10 +4,12 @@
 #include <QStandardPaths>
 #include <QDir>
 #include <QColor>
+#include <QFileInfo>
+#include <memory>
 
-bool PluginConfig::load()
+namespace {
+PluginSettings read_settings(QSettings &settings)
 {
-	QSettings settings(format_, QSettings::UserScope, "oz-coden", "obs-timestamp-memo");
 	PluginSettings value;
 
 	settings.beginGroup("Markers");
@@ -37,16 +39,57 @@ bool PluginConfig::load()
 	settings.beginGroup("General");
 	value.show_status_bar_notification = settings.value("show_status_bar_notification", true).toBool();
 	settings.endGroup();
-	if (settings.status() != QSettings::NoError)
-		return false;
-	values_ = value;
+	return value;
+}
+} // namespace
+
+bool PluginConfig::load()
+{
+	if (file_path_) {
+		if (file_path_->empty())
+			return false;
+		const auto path = QString::fromStdString(*file_path_);
+		if (!QFileInfo::exists(path)) {
+			QSettings legacy(format_, QSettings::UserScope, "oz-coden", "obs-timestamp-memo");
+			auto migrated = read_settings(legacy);
+			if (legacy.status() != QSettings::NoError)
+				return false;
+			return save(migrated); // Commit migration before changing active settings; keep legacy data.
+		}
+		QSettings current(path, QSettings::IniFormat);
+		if (current.value("SchemaVersion", 1).toInt() != 1)
+			return false;
+		auto candidate = read_settings(current);
+		if (current.status() != QSettings::NoError)
+			return false;
+		values_ = std::move(candidate);
+	} else {
+		QSettings legacy(format_, QSettings::UserScope, "oz-coden", "obs-timestamp-memo");
+		auto candidate = read_settings(legacy);
+		if (legacy.status() != QSettings::NoError)
+			return false;
+		values_ = std::move(candidate);
+	}
 	emit configChanged();
 	return true;
 }
 
 bool PluginConfig::save(const PluginSettings &value)
 {
-	QSettings settings(format_, QSettings::UserScope, "oz-coden", "obs-timestamp-memo");
+	std::unique_ptr<QSettings> owned;
+	if (file_path_) {
+		if (file_path_->empty())
+			return false;
+		QFileInfo file(QString::fromStdString(*file_path_));
+		if (!file.dir().mkpath("."))
+			return false;
+		owned = std::make_unique<QSettings>(file.filePath(), QSettings::IniFormat);
+	} else {
+		owned = std::make_unique<QSettings>(format_, QSettings::UserScope, "oz-coden", "obs-timestamp-memo");
+	}
+	auto &settings = *owned;
+	settings.setAtomicSyncRequired(true);
+	settings.setValue("SchemaVersion", 1);
 
 	settings.beginGroup("Markers");
 	for (int i = 0; i < 4; ++i) {

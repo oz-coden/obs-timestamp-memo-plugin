@@ -149,6 +149,8 @@ void SessionController::initialize()
 	connect(&bridge, &RecordingGateway::recordingStopped, this, &SessionController::onRecordingStopped);
 	connect(&bridge, &RecordingGateway::recordingFileChanged, this, &SessionController::onRecordingFileSplit);
 	connect(&bridge, &RecordingGateway::focusMemoRequested, this, &SessionController::focusMemoInputRequested);
+	connect(&bridge, &RecordingGateway::integrationWarning, this,
+		[this](const QString &message) { warn(message.toStdString()); });
 
 	connect(&bridge, &RecordingGateway::quickMarkerRequested, this,
 		[this](int index) { trigger_quick_marker(index); });

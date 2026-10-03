@@ -582,6 +582,38 @@ static void safe_exports(const QString &dir)
 	CHECK(config.save(PluginSettings{}));
 }
 
+static void config_migration(const QString &dir)
+{
+	PluginConfig legacy(QSettings::IniFormat);
+	auto settings = PluginSettings{};
+	settings.marker_types[0].label = "migrated 日本語";
+	settings.auto_export.json = false;
+	settings.show_status_bar_notification = false;
+	CHECK(legacy.save(settings));
+	const auto path = dir + "/portable-plugin/settings.ini";
+	PluginConfig migrated(path.toStdString(), QSettings::IniFormat);
+	CHECK(migrated.load() && QFile::exists(path));
+	CHECK(migrated.values().marker_types[0].label == "migrated 日本語");
+	CHECK(!migrated.values().auto_export.json && !migrated.values().show_status_bar_notification);
+	CHECK(legacy.save(PluginSettings{}));
+	PluginConfig restarted(path.toStdString(), QSettings::IniFormat);
+	CHECK(restarted.load() && restarted.values().marker_types[0].label == "migrated 日本語");
+	auto changed = restarted.values();
+	changed.marker_types[0].label = "plugin-global";
+	CHECK(restarted.save(changed));
+	CHECK(legacy.load() && legacy.values().marker_types[0].label == "Marker 1");
+	PluginConfig other((dir + "/other-portable/settings.ini").toStdString(), QSettings::IniFormat);
+	CHECK(other.load() && other.values().marker_types[0].label == "Marker 1");
+	QFile blocked(dir + "/blocked-migration-parent");
+	CHECK(blocked.open(QIODevice::WriteOnly));
+	blocked.close();
+	PluginConfig failed((blocked.fileName() + "/settings.ini").toStdString(), QSettings::IniFormat);
+	CHECK(!failed.load() && failed.values().marker_types[0].label == "Marker 1");
+	PluginConfig unavailable(std::string{});
+	CHECK(!unavailable.load() && !unavailable.save(changed));
+	CHECK(legacy.save(PluginSettings{}));
+}
+
 int main(int argc, char **argv)
 {
 	QCoreApplication app(argc, argv);
@@ -594,6 +626,7 @@ int main(int argc, char **argv)
 		edit_history_and_recovery(dir.path());
 		discard_documents(dir.path());
 		safe_exports(dir.path());
+		config_migration(dir.path());
 		PluginConfig config(QSettings::IniFormat);
 		CHECK(config.load());
 		auto settings = config.values();

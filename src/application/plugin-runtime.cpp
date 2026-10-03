@@ -1,6 +1,7 @@
 #include "plugin-runtime.hpp"
 PluginRuntime::PluginRuntime(QMainWindow &main)
-	: store(bridge.recovery_cache_directory()),
+	: config(bridge.config_path("settings.ini")),
+	  store(bridge.recovery_cache_directory()),
 	  controller(bridge, config, store, exporters),
 	  notifier(main, config)
 {

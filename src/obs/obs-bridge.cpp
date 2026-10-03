@@ -4,6 +4,13 @@
 #include <QEvent>
 #include <limits>
 #include <numeric>
+#include <QFile>
+#include <QFileInfo>
+#include <QDir>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QSaveFile>
 
 ObsBridge::ObsBridge()
 {
@@ -35,6 +42,8 @@ void ObsBridge::initialize()
 		hotkey_ids_[i] =
 			obs_hotkey_register_frontend(names[i], descriptions[i], on_hotkey, &hotkey_bindings_[i]);
 
+	hotkeys_path_ = config_path("hotkeys.json");
+	hotkeys_checked_ = load_global_hotkeys();
 	initialized_ = true;
 	if (is_recording())
 		attach_recording_output();
@@ -46,6 +55,8 @@ void ObsBridge::shutdown()
 	if (!initialized_)
 		return;
 	QCoreApplication::sendPostedEvents(this, QEvent::MetaCall);
+	if (hotkeys_writable_ && !save_global_hotkeys())
+		emit integrationWarning("Could not save plugin hotkeys. Previous hotkey data was retained.");
 	initialized_ = false;
 	detach_recording_output();
 	QCoreApplication::removePostedEvents(this, QEvent::MetaCall);
@@ -213,48 +224,96 @@ void ObsBridge::on_frontend_event(enum obs_frontend_event event, void *private_d
 	}
 }
 
+namespace {
+constexpr const char *binding_names[] = {"hotkey_marker_1", "hotkey_marker_2", "hotkey_marker_3", "hotkey_marker_4",
+					 "hotkey_focus_memo"};
+}
+void ObsBridge::load_hotkey_bindings(obs_data_t *data)
+{
+	for (int i = 0; i < 5; ++i) {
+		auto *bindings = obs_data_get_array(data, binding_names[i]);
+		obs_hotkey_load(hotkey_ids_[i], bindings);
+		obs_data_array_release(bindings);
+	}
+}
+bool ObsBridge::load_global_hotkeys()
+{
+	QFile file(QString::fromStdString(hotkeys_path_));
+	if (!file.exists())
+		return false;
+	auto invalid = [this]() {
+		hotkeys_writable_ = false;
+		emit integrationWarning("Plugin hotkey data could not be read. The file was retained for recovery.");
+		return true;
+	};
+	if (!file.open(QIODevice::ReadOnly))
+		return invalid();
+	const auto bytes = file.readAll();
+	const auto doc = QJsonDocument::fromJson(bytes);
+	if (file.error() != QFileDevice::NoError || !doc.isObject())
+		return invalid();
+	const auto root = doc.object();
+	if (root["schema_version"] != QJsonValue(1) || !root["bindings"].isObject())
+		return invalid();
+	const auto bindings = root["bindings"].toObject();
+	for (const auto *key : binding_names)
+		if (!bindings[key].isArray())
+			return invalid();
+	auto *data = obs_data_create_from_json(QJsonDocument(bindings).toJson(QJsonDocument::Compact).constData());
+	if (!data)
+		return invalid();
+	load_hotkey_bindings(data);
+	obs_data_release(data);
+	return true;
+}
+bool ObsBridge::save_global_hotkeys()
+{
+	if (!hotkeys_writable_ || hotkeys_path_.empty())
+		return false;
+	auto *data = obs_data_create();
+	if (!data)
+		return false;
+	for (int i = 0; i < 5; ++i) {
+		auto *bindings = obs_hotkey_save(hotkey_ids_[i]);
+		if (!bindings) {
+			obs_data_release(data);
+			return false;
+		}
+		obs_data_set_array(data, binding_names[i], bindings);
+		obs_data_array_release(bindings);
+	}
+	const auto bindings = QJsonDocument::fromJson(QByteArray(obs_data_get_json(data))).object();
+	obs_data_release(data);
+	const auto bytes = QJsonDocument(QJsonObject{{"schema_version", 1}, {"bindings", bindings}}).toJson();
+	QFileInfo path(QString::fromStdString(hotkeys_path_));
+	if (!path.dir().mkpath("."))
+		return false;
+	QSaveFile file(path.filePath());
+	if (!file.open(QIODevice::WriteOnly))
+		return false;
+	if (file.write(bytes) != bytes.size()) {
+		file.cancelWriting();
+		return false;
+	}
+	return file.commit();
+}
 void ObsBridge::on_save(obs_data_t *save_data, bool saving, void *private_data)
 {
 	auto *self = static_cast<ObsBridge *>(private_data);
-	if (!self || !save_data)
+	if (!self || !self->initialized_ || !save_data)
 		return;
-
 	if (saving) {
-		obs_data_array_t *hotkey_arr_1 = obs_hotkey_save(self->hotkey_ids_[0]);
-		obs_data_array_t *hotkey_arr_2 = obs_hotkey_save(self->hotkey_ids_[1]);
-		obs_data_array_t *hotkey_arr_3 = obs_hotkey_save(self->hotkey_ids_[2]);
-		obs_data_array_t *hotkey_arr_4 = obs_hotkey_save(self->hotkey_ids_[3]);
-		obs_data_array_t *hotkey_arr_focus = obs_hotkey_save(self->hotkey_ids_[4]);
-
-		obs_data_set_array(save_data, "hotkey_marker_1", hotkey_arr_1);
-		obs_data_set_array(save_data, "hotkey_marker_2", hotkey_arr_2);
-		obs_data_set_array(save_data, "hotkey_marker_3", hotkey_arr_3);
-		obs_data_set_array(save_data, "hotkey_marker_4", hotkey_arr_4);
-		obs_data_set_array(save_data, "hotkey_focus_memo", hotkey_arr_focus);
-
-		obs_data_array_release(hotkey_arr_1);
-		obs_data_array_release(hotkey_arr_2);
-		obs_data_array_release(hotkey_arr_3);
-		obs_data_array_release(hotkey_arr_4);
-		obs_data_array_release(hotkey_arr_focus);
-	} else {
-		obs_data_array_t *hotkey_arr_1 = obs_data_get_array(save_data, "hotkey_marker_1");
-		obs_data_array_t *hotkey_arr_2 = obs_data_get_array(save_data, "hotkey_marker_2");
-		obs_data_array_t *hotkey_arr_3 = obs_data_get_array(save_data, "hotkey_marker_3");
-		obs_data_array_t *hotkey_arr_4 = obs_data_get_array(save_data, "hotkey_marker_4");
-		obs_data_array_t *hotkey_arr_focus = obs_data_get_array(save_data, "hotkey_focus_memo");
-
-		obs_hotkey_load(self->hotkey_ids_[0], hotkey_arr_1);
-		obs_hotkey_load(self->hotkey_ids_[1], hotkey_arr_2);
-		obs_hotkey_load(self->hotkey_ids_[2], hotkey_arr_3);
-		obs_hotkey_load(self->hotkey_ids_[3], hotkey_arr_4);
-		obs_hotkey_load(self->hotkey_ids_[4], hotkey_arr_focus);
-
-		obs_data_array_release(hotkey_arr_1);
-		obs_data_array_release(hotkey_arr_2);
-		obs_data_array_release(hotkey_arr_3);
-		obs_data_array_release(hotkey_arr_4);
-		obs_data_array_release(hotkey_arr_focus);
+		if (self->hotkeys_checked_ && self->hotkeys_writable_ && !self->save_global_hotkeys())
+			emit self->integrationWarning(
+				"Could not save plugin hotkeys. Previous hotkey data was retained.");
+	} else if (!self->hotkeys_checked_) {
+		// One-time import from the current legacy scene collection. Once loaded,
+		// plugin-global bindings take precedence across collection/profile changes.
+		self->load_hotkey_bindings(save_data);
+		self->hotkeys_checked_ = true;
+		if (!self->save_global_hotkeys())
+			emit self->integrationWarning(
+				"Could not migrate plugin hotkeys. Existing scene data was retained.");
 	}
 }
 
@@ -269,14 +328,18 @@ void ObsBridge::on_hotkey(void *data, obs_hotkey_id, obs_hotkey_t *, bool presse
 		emit binding->owner->focusMemoRequested();
 }
 
-std::string ObsBridge::recovery_cache_directory() const
+std::string ObsBridge::config_path(const char *file) const
 {
-	char *path = obs_module_config_path("cache");
+	char *path = obs_module_config_path(file);
 	if (!path)
-		return "";
+		return {};
 	std::string result = path;
 	bfree(path);
 	return result;
+}
+std::string ObsBridge::recovery_cache_directory() const
+{
+	return config_path("cache");
 }
 
 RecordingSnapshot ObsBridge::snapshot() const
