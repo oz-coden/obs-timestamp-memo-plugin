@@ -9,6 +9,9 @@ namespace {
 QString escape_csv_field(const std::string &str)
 {
 	QString qstr = QString::fromStdString(str);
+	const auto trimmed = qstr.trimmed();
+	if (qstr.startsWith('\'') || (!trimmed.isEmpty() && QString("=+-@").contains(trimmed.front())))
+		qstr.prepend('\''); // Export-only text prefix; the document remains unchanged.
 	qstr.replace("\"", "\"\"");
 	return "\"" + qstr + "\"";
 }
@@ -29,16 +32,17 @@ bool CsvExporter::export_to_file(const RecordingSession &session, const std::str
 	// UTF-8 BOM
 	out.setGenerateByteOrderMark(true);
 
-	out << "Index,Timecode In,Timecode Out,Frame In,Elapsed Ms,Marker Name,Comment,Color,Status\n";
+	out << "Index,Marker ID,Timecode In,Timecode Out,Frame In,Elapsed Ms,Marker Name,Comment,Color,Status\n";
 
 	const auto &markers = session.get_markers();
 	auto fps = session.frame_rate();
 
-	for (const auto &m : markers) {
+	for (size_t index = 0; index < markers.size(); ++index) {
+		const auto &m = markers[index];
 		QString tc = QString::fromStdString(m.active_timecode(fps));
 		QString esc_tc = "\"" + tc + "\"";
-		out << m.id << "," << esc_tc << "," << esc_tc << "," << m.frame_index << "," << m.timestamp_ms << ","
-		    << escape_csv_field(m.label) << "," << escape_csv_field(m.comment) << ","
+		out << (index + 1) << "," << m.id << "," << esc_tc << "," << esc_tc << "," << m.frame_index << ","
+		    << m.timestamp_ms << "," << escape_csv_field(m.label) << "," << escape_csv_field(m.comment) << ","
 		    << escape_csv_field(m.color) << "," << (m.is_paused ? "\"PAUSED\"" : "\"NORMAL\"") << "\n";
 	}
 

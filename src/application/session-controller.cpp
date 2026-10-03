@@ -443,8 +443,33 @@ bool SessionController::perform_auto_export(const std::string &base_video_path)
 	auto try_export = [&](bool enabled, const std::string &id, const std::string &ext) {
 		if (!enabled)
 			return;
-		std::string path = dir.filePath(base_name + "." + QString::fromStdString(ext)).toStdString();
-		if (!reg.export_by_id(id, session_, path)) {
+		if (!dir.mkpath(".")) {
+			all_success = false;
+			return;
+		}
+		QString path;
+		for (int attempt = 0; attempt < 1000; ++attempt) {
+			const auto suffix =
+				attempt == 0 ? QString()
+					     : ".timestamp-memo." + QString::fromStdString(session_.session_id()) +
+						       (attempt == 1 ? QString() : "." + QString::number(attempt));
+			const auto candidate = dir.filePath(base_name + suffix + "." + QString::fromStdString(ext));
+			QFile reservation(candidate);
+			// NewOnly also closes the exists-check/create race. Never truncate an existing file.
+			if (reservation.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
+				path = candidate;
+				reservation.close();
+				break;
+			}
+			if (!QFile::exists(candidate))
+				break; // Permission/storage failure is not a name collision.
+		}
+		if (path.isEmpty()) {
+			all_success = false;
+			return;
+		}
+		if (!reg.export_by_id(id, session_, path.toStdString())) {
+			QFile::remove(path); // Remove only this operation's newly reserved output.
 			all_success = false;
 		}
 	};

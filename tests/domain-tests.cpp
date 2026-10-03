@@ -62,6 +62,14 @@ int main()
 		session.add_marker_at_frame(130, 0, "same", "", "y", false);
 		CHECK(TextFormats::generate_chapters(session).find(" / same") != std::string::npos);
 		CHECK(TextFormats::generate_markdown(snapshot).find("memo") != std::string::npos);
+		RecordingSession public_memo;
+		public_memo.replace({"C:\\Users\\private-name\\clip`|.mkv", "id", "2026-10-03", {60, 1}, 1920, 1080});
+		public_memo.add_marker(1000, 0, "**label**|`", "#abcdef", "line1\nline2 <tag> `code`", false);
+		const auto markdown = TextFormats::generate_markdown(public_memo);
+		CHECK(markdown.find("private-name") == std::string::npos);
+		CHECK(markdown.find("clip\\`\\|\\.mkv") != std::string::npos);
+		CHECK(markdown.find("\\*\\*label\\*\\*\\|\\`") != std::string::npos);
+		CHECK(markdown.find("line1<br>line2 &lt;tag&gt; \\`code\\`") != std::string::npos);
 		RecordingSession subtitles;
 		subtitles.add_marker(2000, 0, "later", "", "", false);
 		subtitles.add_marker(1000, 0, "first", "", "a\nb", false);

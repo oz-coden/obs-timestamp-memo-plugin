@@ -534,6 +534,54 @@ static void discard_documents(const QString &dir)
 	CHECK(restarted.unsaved_documents().empty());
 }
 
+static void safe_exports(const QString &dir)
+{
+	PluginConfig config(QSettings::IniFormat);
+	auto settings = PluginSettings{};
+	settings.auto_export = {true, true, true, true, true, true, true, true};
+	CHECK(config.save(settings));
+	SessionStore store;
+	ExporterRegistry exporters;
+	FakeGateway gateway;
+	SessionController controller(gateway, config, store, exporters);
+	controller.initialize();
+	gateway.value.path = (dir + "/collision.mkv").toStdString();
+	for (const auto *ext : {"csv", "edl", "srt", "vtt", "chapters.txt", "md", "xml"}) {
+		QFile foreign(dir + "/collision." + ext);
+		CHECK(foreign.open(QIODevice::WriteOnly));
+		CHECK(foreign.write("foreign data") == 12);
+	}
+	gateway.start();
+	CHECK(controller.trigger_quick_marker(0, "=HYPERLINK(\"https://invalid\")"));
+	CHECK(controller.trigger_quick_marker(0, "+SUM(1,2)"));
+	CHECK(controller.trigger_quick_marker(0, "-1+2"));
+	CHECK(controller.trigger_quick_marker(0, "@formula"));
+	CHECK(controller.trigger_quick_marker(0, "\t =formula"));
+	CHECK(controller.trigger_quick_marker(0, "'=literal"));
+	CHECK(controller.delete_marker(1));
+	const auto session_id = controller.session().session_id();
+	const auto original = controller.session().get_markers().front().comment;
+	gateway.stop();
+	for (const auto *ext : {"csv", "edl", "srt", "vtt", "chapters.txt", "md", "xml"}) {
+		QFile foreign(dir + "/collision." + ext);
+		CHECK(foreign.open(QIODevice::ReadOnly) && foreign.readAll() == "foreign data");
+		CHECK(QFile::exists(dir + "/collision.timestamp-memo." + QString::fromStdString(session_id) + "." +
+				    ext));
+	}
+	const auto csv_path = dir + "/collision.timestamp-memo." + QString::fromStdString(session_id) + ".csv";
+	QFile csv(csv_path);
+	CHECK(csv.open(QIODevice::ReadOnly));
+	const auto bytes = csv.readAll();
+	CHECK(bytes.startsWith("\xEF\xBB\xBFIndex,Marker ID,"));
+	CHECK(bytes.contains("\n1,2,") && bytes.contains("\"'+SUM(1,2)\""));
+	CHECK(bytes.contains("\"'-1+2\"") && bytes.contains("\"'@formula\""));
+	CHECK(bytes.contains("\"'\t =formula\"") && bytes.contains("\"''=literal\""));
+	CHECK(controller.session().get_markers().front().comment == original);
+	CHECK(controller.perform_auto_export(gateway.value.path));
+	CHECK(QFile::exists(dir + "/collision.timestamp-memo." + QString::fromStdString(session_id) + ".2.csv"));
+	CHECK(config.save(PluginSettings{}));
+}
+
 int main(int argc, char **argv)
 {
 	QCoreApplication app(argc, argv);
@@ -545,6 +593,7 @@ int main(int argc, char **argv)
 		CHECK(dir.isValid());
 		edit_history_and_recovery(dir.path());
 		discard_documents(dir.path());
+		safe_exports(dir.path());
 		PluginConfig config(QSettings::IniFormat);
 		CHECK(config.load());
 		auto settings = config.values();

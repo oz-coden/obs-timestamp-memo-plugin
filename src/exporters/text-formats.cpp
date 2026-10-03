@@ -105,16 +105,24 @@ std::string TextFormats::generate_chapters(const RecordingSession &session)
 	return result;
 }
 
-static std::string escape_markdown_cell(std::string text)
+static std::string escape_markdown_cell(const std::string &text)
 {
 	std::string result;
 	result.reserve(text.size());
 	for (char c : text) {
-		if (c == '|') {
-			result += "\\|";
-		} else if (c == '\r' || c == '\n') {
-			result += ' ';
-		} else {
+		if (c == '\r')
+			continue;
+		if (c == '\n')
+			result += "<br>";
+		else if (c == '&')
+			result += "&amp;";
+		else if (c == '<')
+			result += "&lt;";
+		else if (c == '>')
+			result += "&gt;";
+		else {
+			if (std::string_view("\\`*_{}[]()#+-.!|").find(c) != std::string_view::npos)
+				result += '\\';
 			result += c;
 		}
 	}
@@ -134,7 +142,10 @@ std::string TextFormats::generate_markdown(const RecordingSession &session)
 
 	ss << "## Session Information\n\n";
 	if (!session.video_path().empty()) {
-		ss << "- **Video File**: `" << session.video_path() << "`\n";
+		const auto &path = session.video_path();
+		const auto separator = path.find_last_of("/\\");
+		ss << "- **Video File**: "
+		   << escape_markdown_cell(separator == std::string::npos ? path : path.substr(separator + 1)) << "\n";
 	}
 	ss << "- **Started At**: " << started << "\n";
 	ss << "- **Resolution**: " << session.width() << "x" << session.height() << "\n";
@@ -154,13 +165,13 @@ std::string TextFormats::generate_markdown(const RecordingSession &session)
 			std::string time_str = TimecodeHelper::ms_to_timestamp_str(m.timestamp_ms, false);
 			ss << "- `" << time_str << "` ";
 			if (!m.label.empty()) {
-				ss << "**" << m.label << "**";
+				ss << "**" << escape_markdown_cell(m.label) << "**";
 			}
 			if (!m.comment.empty()) {
 				if (!m.label.empty()) {
 					ss << " - ";
 				}
-				ss << m.comment;
+				ss << escape_markdown_cell(m.comment);
 			}
 			ss << "\n";
 		}
@@ -181,7 +192,7 @@ std::string TextFormats::generate_markdown(const RecordingSession &session)
 		   << "| `" << smpte << "` "
 		   << "| " << escape_markdown_cell(m.label) << " "
 		   << "| " << escape_markdown_cell(m.comment) << " "
-		   << "| `" << m.color << "` |\n";
+		   << "| " << escape_markdown_cell(m.color) << " |\n";
 	}
 
 	ss << "\n";
