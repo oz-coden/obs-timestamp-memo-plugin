@@ -19,6 +19,16 @@ struct VideoFrameRate {
 
 class TimecodeHelper {
 public:
+	static uint64_t ns_to_frame_index(uint64_t ns, const VideoFrameRate &fps)
+	{
+		if (!fps.valid())
+			return 0;
+		// Split before multiplying so the full uint64_t nanosecond range is safe.
+		const auto units = (ns / 1000000000ULL) * fps.num;
+		const auto denominator = 1000000000ULL * fps.den;
+		const auto remainder = (units % fps.den) * 1000000000ULL + (ns % 1000000000ULL) * fps.num;
+		return units / fps.den + (remainder + denominator / 2) / denominator;
+	}
 	static uint64_t ms_to_frame_index(uint64_t ms, const VideoFrameRate &fps);
 	static uint64_t frame_index_to_ms(uint64_t frame_index, const VideoFrameRate &fps);
 	static std::string frame_index_to_smpte(uint64_t frame_index, const VideoFrameRate &fps,

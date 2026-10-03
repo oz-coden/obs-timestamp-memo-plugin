@@ -4,6 +4,7 @@
 #include <string>
 struct RecordingSnapshot {
 	bool recording = false, paused = false;
+	bool clock_ready = true;
 	uint64_t total_frames = 0;
 	std::string path;
 	VideoFrameRate fps{60, 1};

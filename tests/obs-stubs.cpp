@@ -39,6 +39,9 @@ obs_encoder_t encoder;
 obs_encoder_t replacement_encoder;
 obs_encoder_t *active_encoder = &encoder;
 int metadata_query_count = 0;
+uint64_t video_clock = 1000000000ULL;
+bool timed = true;
+std::vector<std::pair<packet_callback, void *>> packet_callbacks;
 bool have_video_info = true;
 bool recording = false, paused = false, exited = false, reject = false;
 bool output_ready = false;
@@ -78,6 +81,23 @@ char *obs_module_config_path(const char *file)
 	auto *result = static_cast<char *>(std::malloc(static_cast<size_t>(path.size()) + 1));
 	std::memcpy(result, path.constData(), static_cast<size_t>(path.size()) + 1);
 	return result;
+}
+uint64_t obs_get_video_frame_time()
+{
+	frontend_call();
+	return video_clock;
+}
+uint32_t obs_output_get_flags(obs_output_t *)
+{
+	return OBS_OUTPUT_ENCODED | (timed ? OBS_OUTPUT_AUDIO : 0);
+}
+void obs_output_add_packet_callback(obs_output_t *, packet_callback cb, void *data)
+{
+	::packet_callbacks.emplace_back(cb, data);
+}
+void obs_output_remove_packet_callback(obs_output_t *, packet_callback cb, void *data)
+{
+	std::erase(::packet_callbacks, std::make_pair(cb, data));
 }
 int obs_output_get_total_frames(obs_output_t *ptr)
 {
@@ -262,6 +282,8 @@ void reset(QMainWindow *window, const QString &dir)
 	recording = paused = exited = reject = false;
 	output_ready = false;
 	output_queries = 0;
+	video_clock = 1000000000ULL;
+	timed = true;
 	invalid_calls = 0;
 	active_encoder = &encoder;
 	metadata_query_count = 0;
@@ -275,6 +297,7 @@ void start(const QString &path, int frames)
 	recording = true;
 	paused = false;
 	dispatch(OBS_FRONTEND_EVENT_RECORDING_STARTED);
+	set_frames(frames);
 }
 void stop()
 {
@@ -284,7 +307,9 @@ void stop()
 }
 void split(const QString &path, int frames)
 {
-	output.frames = frames;
+	set_frames(frames);
+	video_packet(static_cast<int64_t>(frames) * video.fps_den, static_cast<int32_t>(video.fps_num), video_clock,
+		     true);
 	calldata_t data{path.toStdString()};
 	for (auto callback : output.handler.callbacks)
 		callback.first(callback.second, &data);
@@ -292,6 +317,32 @@ void split(const QString &path, int frames)
 void set_frames(int frames)
 {
 	output.frames = frames;
+	video_clock = 1000000000ULL + static_cast<uint64_t>(frames) * 1000000000ULL * video.fps_den *
+					      active_encoder->divisor / video.fps_num;
+	video_packet(static_cast<int64_t>(frames) * video.fps_den * active_encoder->divisor,
+		     static_cast<int32_t>(video.fps_num), video_clock);
+}
+void set_video_clock(uint64_t ns)
+{
+	video_clock = ns;
+}
+void timed_packets(bool enabled)
+{
+	timed = enabled;
+}
+int packet_callbacks()
+{
+	return static_cast<int>(::packet_callbacks.size());
+}
+void video_packet(int64_t pts, int32_t denominator, uint64_t cts, bool keyframe)
+{
+	encoder_packet packet;
+	packet.pts = pts;
+	packet.timebase_den = denominator;
+	packet.keyframe = keyframe;
+	encoder_packet_time timing{cts};
+	for (const auto &callback : ::packet_callbacks)
+		callback.first(&output, &packet, &timing, callback.second);
 }
 void set_paused(bool value)
 {

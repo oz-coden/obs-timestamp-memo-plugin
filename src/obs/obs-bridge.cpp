@@ -81,18 +81,6 @@ bool ObsBridge::is_paused() const
 	return obs_frontend_recording_paused();
 }
 
-uint64_t ObsBridge::get_current_record_frames() const
-{
-	auto *output = recording_output_;
-	if (!output) {
-		return 0;
-	}
-
-	int total_frames = obs_output_get_total_frames(output);
-
-	return total_frames > 0 ? static_cast<uint64_t>(total_frames) : 0;
-}
-
 std::string ObsBridge::get_current_record_file_path() const
 {
 	if (!recording_path_.empty())
@@ -126,9 +114,23 @@ void ObsBridge::attach_recording_output()
 	// output only after recording becomes active, then retain it through STOPPED.
 	recording_output_ = obs_frontend_get_recording_output();
 	recording_path_ = get_current_record_file_path();
-	if (recording_output_)
+	if (recording_output_) {
+		refresh_metadata(obs_output_get_video_encoder(recording_output_));
+		const auto flags = obs_output_get_flags(recording_output_);
+		const bool timed_packets = (flags & OBS_OUTPUT_ENCODED) && (flags & OBS_OUTPUT_AUDIO);
+		{
+			std::lock_guard lock(clock_mutex_);
+			clock_.reset(obs_get_video_frame_time(), !timed_packets);
+			clock_fps_ = metadata_.fps;
+			keyframe_ns_.reset();
+		}
+		obs_output_add_packet_callback(recording_output_, on_packet, this);
+		if (!timed_packets)
+			emit integrationWarning(
+				"This recording output has no timed packet callbacks. Marker time uses a recording-start video-clock estimate.");
 		signal_handler_connect(obs_output_get_signal_handler(recording_output_), "file_changed",
 				       on_file_changed, this);
+	}
 }
 
 void ObsBridge::detach_recording_output()
@@ -137,6 +139,7 @@ void ObsBridge::detach_recording_output()
 	metadata_valid_ = false;
 	metadata_encoder_ = nullptr;
 	if (recording_output_) {
+		obs_output_remove_packet_callback(recording_output_, on_packet, this);
 		signal_handler_disconnect(obs_output_get_signal_handler(recording_output_), "file_changed",
 					  on_file_changed, this);
 		obs_output_release(recording_output_);
@@ -151,8 +154,16 @@ void ObsBridge::on_file_changed(void *data, calldata_t *params)
 	if (!self || !path || !*path)
 		return;
 	QString next_path = QString::fromUtf8(path);
-	int total = obs_output_get_total_frames(self->recording_output_);
-	uint64_t frames = total > 0 ? static_cast<uint64_t>(total) : 0;
+	uint64_t frames;
+	{
+		std::lock_guard lock(self->clock_mutex_);
+		// FFmpeg splits on a video keyframe. file_changed does not expose its
+		// PTS; use the most recent observed keyframe, or a clock estimate for
+		// outputs without timed packets. Exact custom-muxer boundaries need
+		// real-file verification (see the manual validation guide).
+		const auto boundary = self->keyframe_ns_.value_or(self->clock_.time(obs_get_video_frame_time()));
+		frames = TimecodeHelper::ns_to_frame_index(boundary, self->clock_fps_);
+	}
 	uint64_t generation = self->output_generation_.load();
 	QMetaObject::invokeMethod(
 		self,
@@ -163,6 +174,21 @@ void ObsBridge::on_file_changed(void *data, calldata_t *params)
 			emit self->recordingFileChanged(next_path, frames);
 		},
 		Qt::QueuedConnection);
+}
+
+void ObsBridge::on_packet(obs_output_t *, encoder_packet *packet, encoder_packet_time *timing, void *data)
+{
+	auto *self = static_cast<ObsBridge *>(data);
+	if (!packet || packet->type != OBS_ENCODER_VIDEO || packet->track_idx != 0)
+		return;
+	std::lock_guard lock(self->clock_mutex_);
+	if (packet->keyframe) {
+		const auto pts = PresentationClock::pts_to_ns(packet->pts, packet->timebase_den);
+		if (pts && (!self->keyframe_ns_ || *pts >= *self->keyframe_ns_))
+			self->keyframe_ns_ = pts;
+	}
+	if (timing)
+		self->clock_.observe(timing->cts, packet->pts, packet->timebase_den);
 }
 
 void ObsBridge::refresh_metadata(obs_encoder_t *encoder) const
@@ -205,10 +231,16 @@ void ObsBridge::on_frontend_event(enum obs_frontend_event event, void *private_d
 		self->attach_recording_output();
 		emit self->recordingStarted();
 		break;
-	case OBS_FRONTEND_EVENT_RECORDING_PAUSED:
+	case OBS_FRONTEND_EVENT_RECORDING_PAUSED: {
+		std::lock_guard lock(self->clock_mutex_);
+		self->clock_.pause(obs_get_video_frame_time());
+	}
 		emit self->recordingPaused();
 		break;
-	case OBS_FRONTEND_EVENT_RECORDING_UNPAUSED:
+	case OBS_FRONTEND_EVENT_RECORDING_UNPAUSED: {
+		std::lock_guard lock(self->clock_mutex_);
+		self->clock_.resume(obs_get_video_frame_time());
+	}
 		emit self->recordingUnpaused();
 		break;
 	case OBS_FRONTEND_EVENT_RECORDING_STOPPED:
@@ -351,13 +383,19 @@ RecordingSnapshot ObsBridge::snapshot() const
 	value.paused = value.recording && is_paused();
 	if (!recording_output_)
 		return value;
-	value.total_frames = get_current_record_frames();
 	value.path = get_current_record_file_path();
 	// Encoder identity is cheap to check; fixed metadata is refreshed only
 	// for a new output/encoder. No output is acquired from this polling path.
 	auto *encoder = obs_output_get_video_encoder(recording_output_);
 	if (!metadata_valid_ || encoder != metadata_encoder_)
 		refresh_metadata(encoder);
+	{
+		std::lock_guard lock(clock_mutex_);
+		clock_fps_ = metadata_.fps;
+		value.clock_ready = clock_.ready();
+		value.total_frames =
+			TimecodeHelper::ns_to_frame_index(clock_.time(obs_get_video_frame_time()), metadata_.fps);
+	}
 	value.fps = metadata_.fps;
 	value.width = metadata_.width;
 	value.height = metadata_.height;

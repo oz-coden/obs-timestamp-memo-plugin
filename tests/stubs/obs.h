@@ -47,3 +47,21 @@ inline void bfree(void *ptr)
 {
 	std::free(ptr);
 }
+
+constexpr uint32_t OBS_OUTPUT_AUDIO = 2, OBS_OUTPUT_ENCODED = 4;
+enum obs_encoder_type { OBS_ENCODER_VIDEO, OBS_ENCODER_AUDIO };
+struct encoder_packet {
+	int64_t pts = 0;
+	int32_t timebase_den = 60;
+	obs_encoder_type type = OBS_ENCODER_VIDEO;
+	size_t track_idx = 0;
+	bool keyframe = false;
+};
+struct encoder_packet_time {
+	uint64_t cts = 0;
+};
+using packet_callback = void (*)(obs_output_t *, encoder_packet *, encoder_packet_time *, void *);
+uint64_t obs_get_video_frame_time();
+uint32_t obs_output_get_flags(obs_output_t *);
+void obs_output_add_packet_callback(obs_output_t *, packet_callback, void *);
+void obs_output_remove_packet_callback(obs_output_t *, packet_callback, void *);

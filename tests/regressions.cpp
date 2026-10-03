@@ -488,6 +488,8 @@ static void lifecycle_and_ui(const QString &dir, QMainWindow &window)
 	CHECK(obs_module_load());
 	auto &late = qobject_cast<DockWidget *>(FakeObs::dock()->widget())->controller();
 	CHECK(late.is_recording());
+	CHECK(!late.trigger_quick_marker(0)); // Wait for the first timed packet after attachment.
+	FakeObs::set_frames(30);
 	CHECK(late.trigger_quick_marker(0));
 	CHECK(late.session().get_markers().at(0).timestamp_ms == 1001);
 	CHECK(FakeObs::recording_output_queries() == 1 && FakeObs::output_refs() == 1);
@@ -497,6 +499,59 @@ static void lifecycle_and_ui(const QString &dir, QMainWindow &window)
 	CHECK(FakeObs::invalid_frontend_calls() == 0);
 	CHECK(QFile::exists(dir + "/already-recording.json"));
 	std::cout << "PASS UI hierarchy, context menu mutation, paused markers, split, reload, EXIT and dock failure\n";
+}
+
+static void presentation_time(const QString &dir, QMainWindow &window)
+{
+	FakeObs::reset(&window, dir + "/clock-cache");
+	FakeObs::set_rate(60, 1);
+	FakeObs::set_encoder(1, 1920, 1080);
+	ObsBridge bridge;
+	bridge.initialize();
+	CHECK(FakeObs::recording_output_queries() == 0 && FakeObs::packet_callbacks() == 0);
+	FakeObs::start(dir + "/clock.mkv");
+	CHECK(FakeObs::packet_callbacks() == 1);
+	FakeObs::set_frames(30);                 // Encoded output has delivered only half a second.
+	FakeObs::set_video_clock(2000000000ULL); // The rendered video is already at one second.
+	CHECK(bridge.snapshot().total_frames == 60 && bridge.snapshot().clock_ready);
+	// B-frame delivery order does not rewind the calibration anchor.
+	FakeObs::video_packet(12, 60, 1200000000ULL);
+	CHECK(bridge.snapshot().total_frames == 60);
+	FakeObs::set_paused(true);
+	FakeObs::set_video_clock(9000000000ULL);
+	CHECK(bridge.snapshot().total_frames == 60);
+	FakeObs::set_paused(false);
+	FakeObs::set_video_clock(10000000000ULL);
+	CHECK(bridge.snapshot().total_frames == 120);
+	FakeObs::video_packet(54, 60, 1900000000ULL); // Delayed pre-pause packet.
+	CHECK(bridge.snapshot().total_frames == 120);
+	FakeObs::video_packet(90, 60, 9500000000ULL, true);
+	CHECK(bridge.snapshot().total_frames == 120);
+	uint64_t boundary = 0;
+	QObject::connect(&bridge, &RecordingGateway::recordingFileChanged,
+			 [&boundary](const QString &, uint64_t frame) { boundary = frame; });
+	// The stub split publishes a keyframe PTS; verify that the queued event uses
+	// that presentation boundary rather than the number of output packets.
+	FakeObs::split(dir + "/clock-next.mkv", 180);
+	bridge.drain_pending_events();
+	CHECK(boundary == 180);
+	FakeObs::stop();
+	CHECK(FakeObs::packet_callbacks() == 0 && FakeObs::output_refs() == 0);
+	FakeObs::set_rate(60000, 1001);
+	FakeObs::start(dir + "/clock-fractional.mkv");
+	FakeObs::set_video_clock(2001000000ULL);
+	CHECK(bridge.snapshot().total_frames == 60);
+	FakeObs::stop();
+	FakeObs::timed_packets(false);
+	int estimates = 0;
+	QObject::connect(&bridge, &RecordingGateway::integrationWarning,
+			 [&estimates](const QString &) { ++estimates; });
+	FakeObs::start(dir + "/clock-no-audio.mkv");
+	CHECK(estimates == 1 && bridge.snapshot().clock_ready);
+	FakeObs::stop();
+	bridge.shutdown();
+	CHECK(FakeObs::invalid_frontend_calls() == 0);
+	FakeObs::reset(&window, dir + "/fallback");
 }
 
 static void notification_severity()
@@ -589,6 +644,7 @@ int main(int argc, char **argv)
 	FakeObs::reset(&window, dir.path() + "/fallback");
 	try {
 		notification_severity();
+		presentation_time(dir.path(), window);
 		global_hotkeys(dir.path(), window);
 		timecodes();
 		persistence(dir.path());

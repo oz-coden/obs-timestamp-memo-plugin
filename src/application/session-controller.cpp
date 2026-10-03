@@ -234,6 +234,10 @@ bool SessionController::trigger_quick_marker(int type_index, const std::string &
 	const auto capture = poll_recording_state();
 	if (!timeline_.active() || capture_blocked_)
 		return false;
+	if (!capture.clock_ready) {
+		warn("Recording time is not calibrated yet. Try stamping again after the first video packet.", 5000);
+		return false;
+	}
 
 	if (type_index < 0 || type_index >= 4) {
 		type_index = 0;

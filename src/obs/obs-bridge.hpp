@@ -1,6 +1,8 @@
 #pragma once
 
 #include "recording-gateway.hpp"
+#include "presentation-clock.hpp"
+#include <mutex>
 #include <array>
 
 #include <string>
@@ -26,7 +28,6 @@ public:
 private:
 	bool is_recording() const;
 	bool is_paused() const;
-	uint64_t get_current_record_frames() const;
 	std::string get_current_record_file_path() const;
 	void refresh_metadata(obs_encoder_t *encoder) const;
 	struct RecordingMetadata {
@@ -41,6 +42,7 @@ private:
 	static void on_frontend_event(enum obs_frontend_event event, void *private_data);
 	static void on_save(obs_data_t *save_data, bool saving, void *private_data);
 	static void on_file_changed(void *data, calldata_t *params);
+	static void on_packet(obs_output_t *, encoder_packet *, encoder_packet_time *, void *);
 	void attach_recording_output();
 	void detach_recording_output();
 
@@ -55,6 +57,10 @@ private:
 	obs_output_t *recording_output_ = nullptr;
 	std::string recording_path_;
 	std::atomic<uint64_t> output_generation_{0};
+	mutable std::mutex clock_mutex_;
+	PresentationClock clock_;
+	std::optional<uint64_t> keyframe_ns_;
+	mutable VideoFrameRate clock_fps_;
 	std::string hotkeys_path_;
 	bool hotkeys_checked_ = false, hotkeys_writable_ = true;
 	bool load_global_hotkeys();

@@ -1,4 +1,5 @@
 #include "recording-session.hpp"
+#include "presentation-clock.hpp"
 #include "recording-timeline.hpp"
 #include "marker-edit-history.hpp"
 #include "text-formats.hpp"
@@ -27,6 +28,34 @@ int main()
 		CHECK(TimecodeHelper::frame_index_to_ms(103576424ULL, {60000, 1001}) == 1728000007ULL);
 		CHECK(TimecodeHelper::smpte_to_frame_index("00:01:00;00", {30000, 1001}) == 0);
 		CHECK(TimecodeHelper::smpte_to_frame_index("00:00:01:xx", {60, 1}) == 0);
+		PresentationClock clock;
+		clock.reset(1000000000ULL, false);
+		CHECK(!clock.ready() && clock.time(2000000000ULL) == 0);
+		CHECK(clock.observe(1000000000ULL, 0, 60000));
+		CHECK(clock.time(2500000000ULL) == 1500000000ULL);
+		// An encoded packet arrives half a second late; its CTS, not its arrival,
+		// preserves the current presentation position.
+		CHECK(clock.observe(2000000000ULL, 60000, 60000));
+		CHECK(clock.time(2500000000ULL) == 1500000000ULL);
+		CHECK(!clock.observe(1500000000ULL, 30000, 60000));
+		clock.pause(2500000000ULL);
+		CHECK(clock.time(9000000000ULL) == 1500000000ULL);
+		CHECK(!clock.observe(2500000000ULL, 90000, 60000));
+		clock.resume(9000000000ULL);
+		CHECK(clock.time(10000000000ULL) == 2500000000ULL);
+		CHECK(!clock.observe(2400000000ULL, 84000, 60000));
+		CHECK(clock.observe(9500000000ULL, 120000, 60000));
+		CHECK(clock.time(10000000000ULL) == 2500000000ULL);
+		CHECK(TimecodeHelper::ns_to_frame_index(1001000000ULL, {60000, 1001}) == 60);
+		CHECK(TimecodeHelper::ns_to_frame_index(1001000000ULL, {30000, 1001}) == 30);
+		CHECK(TimecodeHelper::ns_to_frame_index(2002000000ULL, {60000, 1001}) == 120);
+		CHECK(TimecodeHelper::ns_to_frame_index(UINT64_MAX, {1000, 1}) == 18446744073710ULL);
+		CHECK(!PresentationClock::pts_to_ns(-1, 60));
+		CHECK(!PresentationClock::pts_to_ns(INT64_MAX, 1));
+		CHECK(!PresentationClock::pts_to_ns(10, 0));
+		clock.reset(1000000000ULL, true);
+		CHECK(clock.ready() && clock.time(2000000000ULL) == 1000000000ULL);
+
 		RecordingTimeline timeline;
 		CHECK(!timeline.pause() && !timeline.split(10));
 		CHECK(timeline.start() && !timeline.start());
