@@ -13,6 +13,7 @@
 #include <QObject>
 #include <QTimer>
 #include "recording-gateway.hpp"
+#include "notification.hpp"
 class PluginConfig;
 class ExporterRegistry;
 
@@ -29,9 +30,14 @@ public:
 	SessionController(RecordingGateway &bridge, PluginConfig &config, SessionStore &store,
 			  ExporterRegistry &exporters);
 	~SessionController() override;
-	void notify(const std::string &message, int timeout = 3000)
+	void notify(const std::string &message, int timeout = 3000,
+		    NotificationSeverity severity = NotificationSeverity::Info)
 	{
-		emit notificationRequested(QString::fromStdString(message), timeout);
+		emit notificationRequested(QString::fromStdString(message), timeout, severity);
+	}
+	void warn(const std::string &message, int timeout = 5000)
+	{
+		notify(message, timeout, NotificationSeverity::Warning);
 	}
 	QString document_title() const;
 
@@ -72,7 +78,7 @@ public:
 	void check_recording_file_changed();
 
 signals:
-	void notificationRequested(const QString &message, int timeout);
+	void notificationRequested(const QString &message, int timeout, NotificationSeverity severity);
 	void markerAdded(const MemoMarker &marker, int row);
 	void markerUpdated(const MemoMarker &marker, int row);
 	void markerRemoved(uint32_t id, int row);

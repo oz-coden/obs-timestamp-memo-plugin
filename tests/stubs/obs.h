@@ -13,6 +13,7 @@ using obs_hotkey_id = uint64_t;
 constexpr obs_hotkey_id OBS_INVALID_HOTKEY_ID = UINT64_MAX;
 constexpr int LOG_INFO = 200;
 constexpr int LOG_ERROR = 100;
+constexpr int LOG_WARNING = 300;
 struct obs_video_info {
 	uint32_t fps_num, fps_den, output_width, output_height;
 };

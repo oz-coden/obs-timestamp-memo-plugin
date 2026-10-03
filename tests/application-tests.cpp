@@ -483,6 +483,14 @@ int main(int argc, char **argv)
 		CHECK(controller.session().get_markers().size() == 1);
 		CHECK(controller.session().get_markers().front().frame_index == 60);
 		CHECK(controller.session().get_markers().front().label == "Custom");
+		const auto custom_id = controller.session().get_markers().front().id;
+		CHECK(controller.update_marker_data(custom_id, "Hand edited label", "", "memo"));
+		CHECK(controller.update_marker_type(custom_id, 3));
+		CHECK(controller.session().get_markers().front().label == "Hand edited label");
+		CHECK(controller.session().get_markers().front().color == "#e74c3c");
+		CHECK(controller.update_marker_data(custom_id, "Cut / Edit", "", "memo"));
+		CHECK(controller.update_marker_type(custom_id, 1));
+		CHECK(controller.session().get_markers().front().label == "Custom");
 		gateway.pause();
 		gateway.quick(0);
 		CHECK(controller.is_paused() && controller.session().get_markers().back().is_paused);

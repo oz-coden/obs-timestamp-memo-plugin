@@ -360,7 +360,7 @@ void DockWidget::onExportClicked()
 {
 	const auto &session = controller_.session();
 	if (session.get_markers().empty()) {
-		controller_.notify("There are no markers to export.", 2000);
+		controller_.warn("There are no markers to export.", 2000);
 		return;
 	}
 

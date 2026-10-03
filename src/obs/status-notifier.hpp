@@ -2,6 +2,7 @@
 #include <QObject>
 #include <QPointer>
 #include <QStatusBar>
+#include "notification.hpp"
 class QMainWindow;
 class PluginConfig;
 class StatusNotifier : public QObject {
@@ -11,7 +12,8 @@ public:
 	void initialize() { enabled_ = true; }
 	void shutdown();
 public slots:
-	void notify(const QString &message, int timeout = 3000);
+	void notify(const QString &message, int timeout = 3000,
+		    NotificationSeverity severity = NotificationSeverity::Info);
 
 private:
 	QPointer<QStatusBar> status_bar_;

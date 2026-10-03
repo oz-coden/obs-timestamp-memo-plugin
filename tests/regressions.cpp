@@ -1,5 +1,6 @@
 #include "obs-stubs.hpp"
 #include "obs-bridge.hpp"
+#include "status-notifier.hpp"
 #include "dock-widget.hpp"
 #include "settings-dialog.hpp"
 #include "recording-session.hpp"
@@ -498,6 +499,28 @@ static void lifecycle_and_ui(const QString &dir, QMainWindow &window)
 	std::cout << "PASS UI hierarchy, context menu mutation, paused markers, split, reload, EXIT and dock failure\n";
 }
 
+static void notification_severity()
+{
+	QMainWindow window;
+	PluginConfig config(QSettings::IniFormat);
+	auto settings = config.values();
+	settings.show_status_bar_notification = false;
+	CHECK(config.save(settings));
+	StatusNotifier notifier(window, config);
+	notifier.initialize();
+	notifier.notify("ordinary", 3000, NotificationSeverity::Info);
+	CHECK(window.statusBar()->currentMessage().isEmpty());
+	notifier.notify("save failed", 5000, NotificationSeverity::Warning);
+	CHECK(window.statusBar()->currentMessage() == "save failed");
+	notifier.notify("data at risk", 5000, NotificationSeverity::Error);
+	CHECK(window.statusBar()->currentMessage() == "data at risk");
+	notifier.shutdown();
+	notifier.notify("after shutdown", 5000, NotificationSeverity::Error);
+	CHECK(window.statusBar()->currentMessage() == "data at risk");
+	settings.show_status_bar_notification = true;
+	CHECK(config.save(settings));
+}
+
 int main(int argc, char **argv)
 {
 	QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
@@ -516,6 +539,7 @@ int main(int argc, char **argv)
 	QMainWindow window;
 	FakeObs::reset(&window, dir.path() + "/fallback");
 	try {
+		notification_severity();
 		timecodes();
 		persistence(dir.path());
 		journaling(dir.path());

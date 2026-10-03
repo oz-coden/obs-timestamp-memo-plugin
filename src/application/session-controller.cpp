@@ -31,9 +31,9 @@ bool SessionController::preserve_current_document()
 		const auto count = std::count_if(unsaved_documents_.begin(), unsaved_documents_.end(),
 						 [](const auto &entry) { return entry.memory.has_value(); });
 		if (count >= 8) {
-			notify("Unsaved document limit reached. OBS recording continues, but marker capture is suspended. "
-			       "Use Unsaved to save a document and resume capture.",
-			       10000);
+			warn("Unsaved document limit reached. OBS recording continues, but marker capture is suspended. "
+			     "Use Unsaved to save a document and resume capture.",
+			     10000);
 			return false;
 		}
 		document.memory = session_;
@@ -128,7 +128,7 @@ void SessionController::initialize()
 
 	auto &bridge = bridge_;
 	if (!config_.load())
-		notify("Warning: Settings could not be loaded. Current defaults remain active.", 5000);
+		warn("Warning: Settings could not be loaded. Current defaults remain active.", 5000);
 	for (const auto &path : store_.recovery_copies()) {
 		if (std::any_of(unsaved_documents_.begin(), unsaved_documents_.end(),
 				[&path](const auto &entry) { return entry.recovery_path == path; }))
@@ -179,7 +179,7 @@ void SessionController::shutdown()
 		const bool save_ok = store_.finish(session_, config_.values().auto_export.json);
 		document_unsaved_ = !save_ok && document_unsaved_;
 		if (document_unsaved_)
-			notify("Warning: Failed to persist session during shutdown.", 5000);
+			warn("Warning: Failed to persist session during shutdown.", 5000);
 		perform_auto_export(path);
 	}
 	timeline_.stop();
@@ -191,9 +191,9 @@ void SessionController::shutdown()
 		if (!entry.recovery_path.empty())
 			entry.memory.reset();
 		else
-			notify("Warning: Unsaved markers remain only in memory. All recovery storage failed. "
-			       "Save them before closing OBS.",
-			       10000);
+			warn("Warning: Unsaved markers remain only in memory. All recovery storage failed. "
+			     "Save them before closing OBS.",
+			     10000);
 	}
 }
 
@@ -221,11 +221,11 @@ std::string SessionController::current_video_path() const
 bool SessionController::trigger_quick_marker(int type_index, const std::string &comment)
 {
 	if (!initialized_ || !timeline_.active()) {
-		notify("Not recording! Cannot stamp marker.", 2000);
+		warn("Not recording! Cannot stamp marker.", 2000);
 		return false;
 	}
 	if (capture_blocked_) {
-		notify("Marker capture is suspended. Save an unsaved document first.", 5000);
+		warn("Marker capture is suspended. Save an unsaved document first.", 5000);
 		return false;
 	}
 
@@ -246,7 +246,7 @@ bool SessionController::trigger_quick_marker(int type_index, const std::string &
 		timeline_.relative_frames(capture.total_frames), type_index, label, color, comment, paused,
 		QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs).toStdString());
 	if (!m.id) {
-		notify("Marker ID range exhausted. Save this document before starting a new one.", 5000);
+		warn("Marker ID range exhausted. Save this document before starting a new one.", 5000);
 		return false;
 	}
 	journal_current_ = store_.append({{"op", "add"}, {"marker", SessionCodec::encode_marker(m)}}) &&
@@ -277,7 +277,9 @@ bool SessionController::update_marker_type(uint32_t id, int type)
 		if (marker.id == id) {
 			auto candidate = marker;
 			candidate.type_index = type;
-			candidate.label = config_.values().marker_types[type].label;
+			if (marker.type_index >= 0 && marker.type_index < 4 &&
+			    marker.label == config_.values().marker_types[marker.type_index].label)
+				candidate.label = config_.values().marker_types[type].label;
 			candidate.color = config_.values().marker_types[type].color;
 			return apply_marker_update(candidate);
 		}
@@ -388,7 +390,7 @@ void SessionController::persist_edits()
 	} else {
 		document_unsaved_ = !store_.save(session_);
 		if (document_unsaved_)
-			notify("Warning: Failed to save edited markers. Use Unsaved to save JSON elsewhere.", 5000);
+			warn("Warning: Failed to save edited markers. Use Unsaved to save JSON elsewhere.", 5000);
 		// A closed journal cannot contain edits made after STOPPED/recovery.
 		journal_current_ = false;
 	}
@@ -399,7 +401,7 @@ void SessionController::check_journal()
 {
 	if (!store_.journal_healthy() && !journal_warning_shown_) {
 		journal_warning_shown_ = true;
-		notify("Warning: Recovery cache could not be written. Export JSON to preserve markers.", 5000);
+		warn("Warning: Recovery cache could not be written. Export JSON to preserve markers.", 5000);
 	}
 }
 
@@ -436,7 +438,7 @@ bool SessionController::perform_auto_export(const std::string &base_video_path)
 	try_export(auto_cfg.xml, "xml", "xml");
 
 	if (!all_success) {
-		notify("Warning: Some auto-export formats failed to save!", 5000);
+		warn("Warning: Some auto-export formats failed to save!", 5000);
 	}
 	return all_success;
 }
@@ -532,7 +534,7 @@ void SessionController::onRecordingStopped()
 	if (save_ok && export_ok) {
 		notify("Recording stopped. Markers saved.", 3000);
 	} else {
-		notify("Recording stopped. Warning: Some marker files could not be saved. Check the OBS log.", 5000);
+		warn("Recording stopped. Warning: Some marker files could not be saved. Check the OBS log.", 5000);
 	}
 }
 
@@ -560,7 +562,7 @@ void SessionController::onRecordingFileSplit(const QString &path, uint64_t frame
 	notify("Recording split into: " + new_path, 3000);
 	check_journal();
 	if (!save_ok || !export_ok)
-		notify("Warning: Previous segment could not be saved. Check the recovery cache and OBS log.", 5000);
+		warn("Warning: Previous segment could not be saved. Check the recovery cache and OBS log.", 5000);
 }
 
 void SessionController::start_document(const std::string &path, const VideoFrameRate &fps, uint32_t width,

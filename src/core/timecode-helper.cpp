@@ -11,7 +11,8 @@
 
 namespace {
 // Quotient/remainder scaling avoids both floating-point rounding drift and
-// intermediate overflow. FPS factors are bounded to at most 1,000,000,000.
+// intermediate overflow. FPS numerator/denominator are bounded to 1,000,000;
+// the millisecond scaling factor (1000 * denominator) is at most 1,000,000,000.
 uint64_t rounded_scale(uint64_t value, uint64_t multiplier, uint64_t divisor)
 {
 	const auto whole = value / divisor;
