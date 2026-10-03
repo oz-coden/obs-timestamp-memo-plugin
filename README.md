@@ -19,7 +19,7 @@ an exact player/NLE frame. Preview/display latency, pause cutoff, skipped video,
 audio buffering and muxer split boundaries need actual-file verification. Raw or
 video-only outputs use a recording-start clock estimate and display a warning.
 Stamping waits for the first timed packet when calibration is required. See
-[time-source rationale and measurement procedure](docs/recording-time-source.md).
+[timing notes and changes](CHANGELOG.md).
 
 ## Usage
 
@@ -132,9 +132,8 @@ cmake --build --preset windows-x64 --config RelWithDebInfo --parallel
 ```
 
 Use the macOS / Ubuntu presets in `CMakePresets.json` on those systems.
-[Tests](tests/README.md), [architecture](docs/architecture-and-refactoring.md),
-[manual OBS verification](docs/obs-manual-test.md) and
-[latest fixes](docs/opus-review-fixes.md) describe validation and remaining limits.
+[Tests](tests/README.md) describe automated validation. [Changes](CHANGELOG.md)
+summarize user-facing improvements and remaining compatibility limits.
 
 ## 日本語
 
@@ -152,7 +151,7 @@ DF/NDF表示に対応します。
 すべての環境で「フレーム精度」を保証するものではありません。プレビュー表示遅延、
 pause境界、欠落frame、音声buffer、muxerの分割境界は実ファイルの測定が必要です。
 raw / 映像のみのoutputは開始時刻からの推定となり、警告を表示します。校正が必要な
-outputでは最初のpacketを待って打刻します。[根拠と測定手順](docs/recording-time-source.md)。
+outputでは最初のpacketを待って打刻します。[変更履歴と制約](CHANGELOG.md)。
 
 ### 操作
 
@@ -227,7 +226,7 @@ Windowsは `obs-plugins/64bit` と `data/obs-plugins/obs-timestamp-memo`、macOS
 Linuxのユーザー配置は `~/.config/obs-studio/plugins/obs-timestamp-memo/bin/64bit/obs-timestamp-memo.so`
 と同moduleの `data/locale/`。`XDG_CONFIG_HOME`やFlatpak / distributionの配置を尊重してください。
 CMake 3.28+ / C++20で上記presetを使います。[テスト](tests/README.md)、
-[実OBS手順](docs/obs-manual-test.md)、[今回の修正](docs/opus-review-fixes.md)を参照してください。
+[変更履歴](CHANGELOG.md)も参照してください。
 
 ## License / ライセンス・クレジット
 

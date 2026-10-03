@@ -6,7 +6,6 @@
 !/build-aux
 !/cmake
 !/data
-!/docs
 !/src
 !/tests
 !.clang-format
@@ -17,6 +16,11 @@
 !CMakePresets.json
 !LICENSE
 !README.md
+!CHANGELOG.md
+
+# Local handoff, reviews and validation logs; keep these off the remote.
+/HANDOFF.md
+/docs/
 
 # Exclude lock files
 *.lock.json

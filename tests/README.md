@@ -58,13 +58,12 @@ include directories. All 26 implementation files were analyzed; a Qt-owned
 layout produces a known potential leak false positive, with ownership checked by
 the dialog lifetime regressions.
 
-See [architecture and review](../docs/architecture-and-refactoring.md) and
-[OBS manual tests](../docs/obs-manual-test.md).
+See the [changelog](../CHANGELOG.md) for user-facing changes and limitations.
 
-The Opus-review fixes add rendered-video/packet-PTS calibration, delayed/B-frame
+Regression coverage includes rendered-video/packet-PTS calibration, delayed/B-frame
 anchors, pause/resume, fractional FPS, Undo/Redo limits and persistence, unsaved
 discard, collision-safe auto exports, plugin config and global hotkey migration,
 notification severity, Markdown privacy/escaping, CSV text/formula protection,
 auto JSON OFF edits, detailed transactional validation and actual locale tests.
 Real encoder/muxer accuracy and native keyboard/clipboard behavior still need the
-manual OBS steps.
+actual OBS validation.
