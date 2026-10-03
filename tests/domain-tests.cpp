@@ -95,6 +95,8 @@ int main()
 		public_memo.replace({"C:\\Users\\private-name\\clip`|.mkv", "id", "2026-10-03", {60, 1}, 1920, 1080});
 		public_memo.add_marker(1000, 0, "**label**|`", "#abcdef", "line1\nline2 <tag> `code`", false);
 		const auto markdown = TextFormats::generate_markdown(public_memo);
+		public_memo.add_marker(2000, 0, "CR", "", "a\rb\r\nc", false);
+		CHECK(TextFormats::generate_markdown(public_memo).find("a<br>b<br>c") != std::string::npos);
 		CHECK(markdown.find("private-name") == std::string::npos);
 		CHECK(markdown.find("clip\\`\\|\\.mkv") != std::string::npos);
 		CHECK(markdown.find("\\*\\*label\\*\\*\\|\\`") != std::string::npos);

@@ -559,6 +559,40 @@ static void discard_documents(const QString &dir)
 	CHECK(restarted.unsaved_documents().empty());
 }
 
+static void discard_failure_retains_snapshot(const QString &dir)
+{
+	PluginConfig config(QSettings::IniFormat);
+	auto settings = PluginSettings{};
+	settings.auto_export.json = false;
+	CHECK(config.save(settings));
+	FakeGateway gateway;
+	SessionStore store((dir + "/discard-failure-cache").toStdString());
+	ExporterRegistry exporters;
+	SessionController controller(gateway, config, store, exporters);
+	controller.initialize();
+	gateway.value.path = (dir + "/discard-failure.mkv").toStdString();
+	gateway.start();
+	CHECK(controller.trigger_quick_marker(0, "first"));
+	// Simulate a journal that can no longer append while recording continues.
+	CHECK(store.finish(controller.session(), false));
+	CHECK(controller.trigger_quick_marker(0, "newest must remain recoverable"));
+	gateway.split((dir + "/discard-failure-next.mkv").toStdString(), 60);
+	CHECK(controller.unsaved_documents().size() == 1);
+	const auto entry = controller.unsaved_documents().front();
+	CHECK(entry.recovery_path != entry.journal_path && !entry.recovery_path.empty());
+	CHECK(QFile::remove(QString::fromStdString(entry.journal_path)));
+	CHECK(QDir().mkpath(QString::fromStdString(entry.journal_path)));
+	CHECK(!controller.discard_unsaved_document(entry.id));
+	CHECK(QFile::exists(QString::fromStdString(entry.recovery_path)));
+	RecordingSession retained;
+	CHECK(controller.read_unsaved_document(entry.id, retained));
+	CHECK(retained.get_markers().back().comment == "newest must remain recoverable");
+	CHECK(QDir().rmdir(QString::fromStdString(entry.journal_path)));
+	CHECK(controller.discard_unsaved_document(entry.id));
+	CHECK(!QFile::exists(QString::fromStdString(entry.recovery_path)));
+	gateway.stop();
+}
+
 static void safe_exports(const QString &dir)
 {
 	PluginConfig config(QSettings::IniFormat);
@@ -650,6 +684,7 @@ int main(int argc, char **argv)
 		CHECK(dir.isValid());
 		edit_history_and_recovery(dir.path());
 		discard_documents(dir.path());
+		discard_failure_retains_snapshot(dir.path());
 		safe_exports(dir.path());
 		config_migration(dir.path());
 		PluginConfig config(QSettings::IniFormat);

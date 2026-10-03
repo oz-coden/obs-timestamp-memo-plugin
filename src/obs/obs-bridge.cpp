@@ -162,7 +162,8 @@ void ObsBridge::on_file_changed(void *data, calldata_t *params)
 		// PTS; use the most recent observed keyframe, or a clock estimate for
 		// outputs without timed packets. Exact custom-muxer boundaries need
 		// real-file verification (see the manual validation guide).
-		const auto boundary = self->keyframe_ns_.value_or(self->clock_.time(obs_get_video_frame_time()));
+		const auto boundary = self->keyframe_ns_ ? *self->keyframe_ns_
+							 : self->clock_.time(obs_get_video_frame_time());
 		frames = TimecodeHelper::ns_to_frame_index(boundary, self->clock_fps_);
 	}
 	uint64_t generation = self->output_generation_.load();

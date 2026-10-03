@@ -109,9 +109,14 @@ static std::string escape_markdown_cell(const std::string &text)
 {
 	std::string result;
 	result.reserve(text.size());
-	for (char c : text) {
-		if (c == '\r')
+	for (size_t i = 0; i < text.size(); ++i) {
+		const char c = text[i];
+		if (c == '\r') {
+			result += "<br>";
+			if (i + 1 < text.size() && text[i + 1] == '\n')
+				++i;
 			continue;
+		}
 		if (c == '\n')
 			result += "<br>";
 		else if (c == '&')

@@ -759,7 +759,8 @@ bool SessionController::discard_unsaved_document(uint64_t id)
 					  [id](const auto &item) { return item.id == id; });
 		if (entry == unsaved_documents_.end())
 			return false;
-		for (const auto &path : {entry->recovery_path, entry->journal_path})
+		// Keep the authoritative recovery copy until ancillary journal removal succeeds.
+		for (const auto &path : {entry->journal_path, entry->recovery_path})
 			if (!path.empty() && QFile::exists(QString::fromStdString(path)) &&
 			    !QFile::remove(QString::fromStdString(path))) {
 				warn("Could not remove all recovery files. The unsaved entry was retained.");
