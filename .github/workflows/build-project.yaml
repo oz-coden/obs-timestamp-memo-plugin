@@ -1,6 +1,11 @@
 name: Build Project
 on:
   workflow_call:
+    inputs:
+      release_mode:
+        description: Build and validate the distribution archives in Release configuration
+        type: boolean
+        default: false
     outputs:
       pluginName:
         description: Project name detected by parsing build spec file
@@ -23,10 +28,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Test release preparation
+        run: python3 .github/scripts/test-release.py
       - name: Check Event Data ☑️
         id: setup
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_MODE: ${{ inputs.release_mode }}
         run: |
           : Check Event Data ☑️
           if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
@@ -58,6 +66,12 @@ jobs:
               ;;
             *) ;;
           esac
+
+          if [[ "${RELEASE_MODE}" == true ]]; then
+            config_data[1]='notarize:false'
+            config_data[2]='package:false'
+            config_data[3]='config:Release'
+          fi
 
           for config in "${config_data[@]}"; do
             IFS=':' read -r key value <<< "${config}"
@@ -156,6 +170,7 @@ jobs:
           fi
 
       - name: Package Plugin 📀
+        if: ${{ !inputs.release_mode }}
         uses: ./.github/actions/package-plugin
         with:
           target: macos-universal
@@ -169,15 +184,19 @@ jobs:
           codesignUser: ${{ secrets.MACOS_NOTARIZATION_USERNAME }}
           codesignPass: ${{ secrets.MACOS_NOTARIZATION_PASSWORD }}
 
+      - name: Prepare installable archive
+        run: python3 .github/scripts/release.py archive --platform macos-universal --config ${{ needs.check-event.outputs.config }}
+
       - name: Upload Artifacts 📡
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-macos-universal-${{ needs.check-event.outputs.commitHash }}
           path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-macos-universal.*
+          if-no-files-found: error
 
       - name: Upload Debug Symbol Artifacts 🪲
         uses: actions/upload-artifact@v4
-        if: ${{ needs.check-event.outputs.config == 'Release' }}
+        if: ${{ needs.check-event.outputs.config == 'Release' && !inputs.release_mode }}
         with:
           name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-macos-universal-${{ needs.check-event.outputs.commitHash }}-dSYMs
           path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-macos-universal-dSYMs.*
@@ -234,23 +253,35 @@ jobs:
         run: python3 .github/scripts/run-tests.py --config ${{ needs.check-event.outputs.config }}
 
       - name: Package Plugin 📀
+        if: ${{ !inputs.release_mode }}
         uses: ./.github/actions/package-plugin
         with:
           target: x86_64
           config: ${{ needs.check-event.outputs.config }}
           package: ${{ fromJSON(needs.check-event.outputs.package) }}
 
+      - name: Prepare release sources
+        if: inputs.release_mode
+        run: cmake --build build_x86_64 --config Release --target package_source
+
+      - name: Prepare installable archive
+        run: python3 .github/scripts/release.py archive --platform ubuntu-24.04-x86_64 --config ${{ needs.check-event.outputs.config }}
+
       - name: Upload Source Tarball 🗜️
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-${{ matrix.os }}-sources-${{ needs.check-event.outputs.commitHash }}
           path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-source.*
+          if-no-files-found: error
 
       - name: Upload Artifacts 📡
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-${{ matrix.os }}-x86_64-${{ needs.check-event.outputs.commitHash }}
-          path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-x86_64*.*
+          path: |
+            ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-${{ matrix.os }}-x86_64.tar.xz
+            ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-x86_64*.deb
+          if-no-files-found: error
 
       - name: Upload debug symbol artifacts 🪲
         uses: actions/upload-artifact@v4
@@ -303,14 +334,37 @@ jobs:
         run: python .github/scripts/run-tests.py --config ${{ needs.check-event.outputs.config }}
 
       - name: Package Plugin 📀
+        if: ${{ !inputs.release_mode }}
         uses: ./.github/actions/package-plugin
         with:
           target: x64
           config: ${{ needs.check-event.outputs.config }}
           package: ${{ fromJSON(needs.check-event.outputs.package) }}
 
+      - name: Prepare installable archive
+        run: python .github/scripts/release.py archive --platform windows-x64 --config ${{ needs.check-event.outputs.config }}
+
       - name: Upload Artifacts 📡
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-windows-x64-${{ needs.check-event.outputs.commitHash }}
           path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-windows-x64*.*
+          if-no-files-found: error
+
+  validate-release-assets:
+    name: Validate distribution files
+    if: inputs.release_mode
+    needs: [macos-build, ubuntu-build, windows-build]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Validate archives and compute checksums
+        run: python3 .github/scripts/release.py collect --version "$(jq -r .version buildspec.json)" --artifacts artifacts --output distribution
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-files-${{ github.sha }}
+          path: distribution/*
+          if-no-files-found: error

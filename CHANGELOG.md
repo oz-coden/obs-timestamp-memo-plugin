@@ -6,6 +6,8 @@
 
 ### Added
 
+- Manually triggered Release workflow with an explicit version, build-only and
+  draft options, validated platform archives and SHA-256 checksums.
 - Undo/Redo for marker insertion, deletion, label, memo and type changes, with
   standard platform shortcuts and bounded, per-document history.
 - Per-document Unsaved management: save a JSON copy, export, or explicitly
@@ -15,6 +17,8 @@
 
 ### Changed
 
+- Installation-focused bilingual README, with technical details in SPEC.md and
+  separate build/release guides. Windows ZIPs now use OBS's installation layout.
 - Recording timestamps use the rendered video clock calibrated to recording
   packet CTS/PTS, rather than the count of packets already delivered by the
   encoder. Pause freezes the clock; resume excludes the paused interval.
@@ -71,6 +75,8 @@
 
 #### 追加
 
+- バージョンを指定して手動実行するReleaseワークフローを追加。公開しないビルド確認・
+  下書き公開、OS別アーカイブの検証とSHA-256チェックサムに対応します。
 - markerの追加・削除・label・memo・type変更にUndo/Redoを追加。OS標準の
   ショートカットに対応し、文書ごとの履歴量に上限を設けました。
 - Unsaved文書ごとにJSON別名保存・Export・確認付きDiscardを追加しました。
@@ -78,6 +84,8 @@
 
 #### 変更
 
+- READMEを日英の導入・利用案内へ整理し、詳細仕様をSPEC.md、ビルド・公開手順をdocsへ分離。
+  Windows ZIPの構成をOBSへコピーして導入できる配置に変更しました。
 - 打刻時刻をencoder送出packet数ではなく、packet CTS/PTSで校正した描画video clock
   から求める方式へ変更。pause中は固定し、resume後は停止期間を除外します。
 - 設定とhotkeyをOBSのplugin共通configへ保存。portable版にも対応し、旧QSettingsと
