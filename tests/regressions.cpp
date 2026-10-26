@@ -700,7 +700,11 @@ static void unsaved_menu_document_changes(const QString &dir, QMainWindow &windo
 				submenu->setActiveAction(submenu->actions()[operation]);
 				QTimer::singleShot(0, [&]() {
 					auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
-					CHECK(box && box->windowTitle() == "Document Changed");
+					// QMessageBox ignores window titles on macOS. Check the
+					// diagnostic itself on every platform.
+					CHECK(box &&
+					      box->text() ==
+						      "The current document changed. Choose the unsaved document again.");
 					rejected = true;
 					box->button(QMessageBox::Ok)->click();
 				});
