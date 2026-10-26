@@ -11,7 +11,7 @@
 #include <QEvent>
 #include <algorithm>
 
-bool SessionController::preserve_current_document()
+bool SessionController::preserve_current_document(bool split_partition)
 {
 	if (!document_unsaved_)
 		return true;
@@ -26,11 +26,13 @@ bool SessionController::preserve_current_document()
 	else
 		document.recovery_path = store_.create_recovery_copy(session_);
 	if (document.recovery_path.empty()) {
-		// Disk-backed entries do not retain snapshots. If all storage fails,
-		// keep at most eight snapshots plus the current document, never evict data.
+		// Disk-backed entries do not retain snapshots. At eight memory-only
+		// entries, stop ordinary rollover rather than evicting a document.
 		const auto count = std::count_if(unsaved_documents_.begin(), unsaved_documents_.end(),
 						 [](const auto &entry) { return entry.memory.has_value(); });
-		if (count >= 8) {
+		// A delayed split partitions markers already held by the current
+		// document. Retain both parts even at the limit, then suspend stamping.
+		if (count >= 8 && !split_partition) {
 			warn("Unsaved document limit reached. OBS recording continues, but marker capture is suspended. "
 			     "Use Unsaved to save a document and resume capture.",
 			     10000);
@@ -179,20 +181,27 @@ void SessionController::shutdown()
 	if (timeline_.active()) {
 		std::string path = session_.video_path();
 		const bool save_ok = store_.finish(session_, config_.values().auto_export.json);
-		document_unsaved_ = !save_ok && document_unsaved_;
-		if (document_unsaved_)
+		document_unsaved_ = document_unsaved_ && !(save_ok && config_.values().auto_export.json);
+		if (!save_ok && document_unsaved_)
 			warn("Warning: Failed to persist session during shutdown.", 5000);
 		perform_auto_export(path);
 	}
 	timeline_.stop();
 	preserve_current_document();
 	for (auto &entry : unsaved_documents_) {
-		if (!entry.memory)
+		RecordingSession document;
+		if (!entry.memory && !QString::fromStdString(entry.recovery_path).endsWith(".tmp.jsonl"))
 			continue;
-		entry.recovery_path = store_.create_recovery_copy(*entry.memory);
-		if (!entry.recovery_path.empty())
+		if (!read_unsaved_document(entry.id, document))
+			continue;
+		const auto copy = store_.create_recovery_copy(document);
+		if (!copy.empty()) {
+			for (auto *path : {&entry.journal_path, &entry.recovery_path})
+				if (!path->empty() && QFile::remove(QString::fromStdString(*path)))
+					path->clear();
+			entry.recovery_path = copy;
 			entry.memory.reset();
-		else
+		} else if (entry.memory)
 			warn("Warning: Unsaved markers remain only in memory. All recovery storage failed. "
 			     "Save them before closing OBS.",
 			     10000);
@@ -580,7 +589,7 @@ void SessionController::onRecordingStopped()
 
 	std::string json_path;
 	bool save_ok = store_.finish(session_, config_.values().auto_export.json, &json_path);
-	document_unsaved_ = !save_ok && document_unsaved_;
+	document_unsaved_ = document_unsaved_ && !(save_ok && config_.values().auto_export.json);
 	timeline_.stop();
 	capture_blocked_ = false;
 
@@ -590,7 +599,9 @@ void SessionController::onRecordingStopped()
 	emit unsavedDocumentsChanged();
 
 	if (save_ok && export_ok) {
-		notify("Recording stopped. Markers saved.", 3000);
+		notify(config_.values().auto_export.json ? "Recording stopped. Markers saved."
+							 : "Recording stopped. Recovery data saved.",
+		       3000);
 	} else {
 		warn("Recording stopped. Warning: Some marker files could not be saved. Check the OBS log.", 5000);
 	}
@@ -600,19 +611,31 @@ void SessionController::onRecordingFileSplit(const QString &path, uint64_t frame
 {
 	if (!initialized_ || !timeline_.active() || path.isEmpty() || path.toStdString() == session_.video_path())
 		return;
+	const auto first_frame = timeline_.relative_frames(frame_offset);
 	if (!timeline_.split(frame_offset))
 		return;
+	const auto capture = bridge_.snapshot();
+	if (capture_blocked_ && session_.video_path() != pending_capture_.path) {
+		// The current document predates a blocked transition. No markers have
+		// been captured in the skipped segments, so only advance the resume path.
+		pending_capture_ = capture;
+		pending_capture_.path = path.toStdString();
+		return;
+	}
+	auto following = session_.take_markers_from_frame(first_frame);
+	for (const auto &marker : following)
+		journal_current_ = store_.append({{"op", "delete"}, {"id", static_cast<qint64>(marker.id)}}) &&
+				   journal_current_;
 	std::string old_video_path = session_.video_path();
 	std::string old_json_path;
 	bool save_ok = store_.finish(session_, config_.values().auto_export.json, &old_json_path);
-	document_unsaved_ = !save_ok && document_unsaved_;
+	document_unsaved_ = document_unsaved_ && !(save_ok && config_.values().auto_export.json);
 	bool export_ok = perform_auto_export(old_video_path);
 
-	const auto capture = bridge_.snapshot();
 	const auto new_path = path.toStdString();
 	const auto fps = capture.fps;
 	const auto width = capture.width, height = capture.height;
-	start_document(new_path, fps, width, height);
+	start_document(new_path, fps, width, height, std::move(following));
 	journal_warning_shown_ = false;
 
 	emit markersReset(session_.get_markers(), session_.frame_rate());
@@ -627,13 +650,13 @@ void SessionController::onRecordingFileSplit(const QString &path, uint64_t frame
 }
 
 void SessionController::start_document(const std::string &path, const VideoFrameRate &fps, uint32_t width,
-				       uint32_t height)
+				       uint32_t height, std::vector<MemoMarker> markers)
 {
 	pending_capture_.path = path;
 	pending_capture_.fps = fps;
 	pending_capture_.width = width;
 	pending_capture_.height = height;
-	capture_blocked_ = !preserve_current_document();
+	capture_blocked_ = !preserve_current_document(!markers.empty());
 	if (capture_blocked_)
 		return;
 	history_path_.clear();
@@ -642,10 +665,21 @@ void SessionController::start_document(const std::string &path, const VideoFrame
 	emit editHistoryChanged();
 	session_.replace({path, QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString(),
 			  QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs).toStdString(), fps, width,
-			  height});
+			  height},
+			 std::move(markers));
 	journal_current_ = store_.begin(session_);
+	for (const auto &marker : session_.get_markers())
+		journal_current_ = store_.append({{"op", "add"}, {"marker", SessionCodec::encode_marker(marker)}}) &&
+				   journal_current_;
 	++document_revision_;
-	document_unsaved_ = false;
+	document_unsaved_ = !session_.get_markers().empty();
+	if (std::count_if(unsaved_documents_.begin(), unsaved_documents_.end(),
+			  [](const auto &entry) { return entry.memory.has_value(); }) > 8) {
+		capture_blocked_ = true;
+		warn("Unsaved document limit reached. OBS recording continues, but marker capture is suspended. "
+		     "Use Unsaved to save a document and resume capture.",
+		     10000);
+	}
 }
 void SessionController::journal_update(uint32_t id)
 {

@@ -77,3 +77,21 @@ bool RecordingSession::insert_marker(size_t row, const MemoMarker &marker)
 	next_marker_id_ = std::max(next_marker_id_, static_cast<uint64_t>(marker.id) + 1);
 	return true;
 }
+
+std::vector<MemoMarker> RecordingSession::take_markers_from_frame(uint64_t first_frame)
+{
+	std::vector<MemoMarker> following;
+	const auto first = std::stable_partition(markers_.begin(), markers_.end(), [first_frame](const auto &marker) {
+		return marker.frame_index < first_frame;
+	});
+	for (auto it = first; it != markers_.end(); ++it) {
+		auto marker = std::move(*it);
+		marker.frame_index -= first_frame;
+		marker.timestamp_ms = TimecodeHelper::frame_index_to_ms(marker.frame_index, metadata_.fps);
+		marker.timecode_ndf = TimecodeHelper::frame_index_to_smpte(marker.frame_index, metadata_.fps, true);
+		marker.timecode_df = TimecodeHelper::frame_index_to_smpte(marker.frame_index, metadata_.fps);
+		following.push_back(std::move(marker));
+	}
+	markers_.erase(first, markers_.end());
+	return following;
+}

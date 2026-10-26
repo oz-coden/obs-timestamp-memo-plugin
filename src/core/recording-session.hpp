@@ -19,6 +19,7 @@ public:
 			   int type = -1);
 	bool delete_marker(uint32_t id);
 	bool insert_marker(size_t row, const MemoMarker &marker);
+	std::vector<MemoMarker> take_markers_from_frame(uint64_t first_frame);
 	void clear_markers() { markers_.clear(); }
 	void set_video_path(const std::string &path) { metadata_.video_path = path; }
 	const std::string &video_path() const { return metadata_.video_path; }

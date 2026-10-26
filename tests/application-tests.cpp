@@ -32,6 +32,8 @@ public:
 	void start()
 	{
 		value.recording = true;
+		value.paused = false;
+		value.total_frames = 0;
 		emit recordingStarted();
 	}
 	void pause()
@@ -673,6 +675,157 @@ static void config_migration(const QString &dir)
 	CHECK(legacy.save(PluginSettings{}));
 }
 
+static void delayed_split_at_memory_limit(const QString &dir)
+{
+	const auto blocked_path = dir + "/split-limit-blocked";
+	QFile blocked(blocked_path);
+	CHECK(blocked.open(QIODevice::WriteOnly));
+	blocked.close();
+	PluginConfig config((dir + "/split-limit.ini").toStdString());
+	CHECK(config.save(PluginSettings{}));
+	SessionStore store((blocked_path + "/cache").toStdString());
+	ExporterRegistry exporters;
+	FakeGateway gateway;
+	SessionController controller(gateway, config, store, exporters);
+	controller.initialize();
+	gateway.value.path = (blocked_path + "/0.mkv").toStdString();
+	gateway.start();
+	for (int i = 0; i < 8; ++i) {
+		CHECK(controller.trigger_quick_marker(0, "retained-" + std::to_string(i)));
+		gateway.split((blocked_path + QString("/%1.mkv").arg(i + 1)).toStdString(), 60ULL * (i + 1));
+	}
+	CHECK(controller.unsaved_documents().size() == 8 && controller.can_stamp());
+	gateway.value.total_frames = 539;
+	CHECK(controller.trigger_quick_marker(0, "before delayed boundary"));
+	gateway.value.total_frames = 541;
+	CHECK(controller.trigger_quick_marker(1, "after delayed boundary"));
+	gateway.split((blocked_path + "/9.mkv").toStdString(), 540);
+	CHECK(!controller.can_stamp() && controller.unsaved_documents().size() == 9);
+	CHECK(controller.session().get_markers().size() == 1);
+	CHECK(controller.session().get_markers()[0].comment == "after delayed boundary");
+	CHECK(controller.session().get_markers()[0].frame_index == 1);
+	RecordingSession previous;
+	CHECK(controller.read_unsaved_document(controller.unsaved_documents().back().id, previous));
+	CHECK(previous.get_markers().size() == 1 && previous.get_markers()[0].frame_index == 59);
+	CHECK(controller.save_unsaved_document(controller.unsaved_documents().front().id,
+					       (dir + "/split-limit-rescue-1.json").toStdString()));
+	CHECK(!controller.can_stamp());
+	CHECK(controller.save_unsaved_document(controller.unsaved_documents().front().id,
+					       (dir + "/split-limit-rescue-2.json").toStdString()));
+	CHECK(controller.can_stamp() && controller.unsaved_documents().size() == 8);
+	RecordingSession following;
+	CHECK(controller.read_unsaved_document(controller.unsaved_documents().back().id, following));
+	CHECK(following.video_path() == (blocked_path + "/9.mkv").toStdString());
+	CHECK(following.get_markers().size() == 1 && following.get_markers()[0].frame_index == 1);
+	CHECK(following.get_markers()[0].comment == "after delayed boundary");
+	CHECK(controller.trigger_quick_marker(0, "resumed"));
+	gateway.stop();
+	CHECK(controller.save_current_document((dir + "/split-limit-current.json").toStdString()));
+}
+
+static void auto_json_off_retains_unsaved(const QString &dir)
+{
+	const auto cache = (dir + "/off-retained-cache").toStdString();
+	PluginConfig config((dir + "/off-retained-settings.ini").toStdString());
+	auto settings = PluginSettings{};
+	settings.auto_export.json = false;
+	CHECK(config.save(settings));
+	ExporterRegistry exporters;
+	FakeGateway gateway;
+	{
+		SessionStore store(cache);
+		SessionController controller(gateway, config, store, exporters);
+		controller.initialize();
+		gateway.value.path = (dir + "/off-first.mkv").toStdString();
+		gateway.start();
+		CHECK(controller.trigger_quick_marker(0, "first retained"));
+		gateway.stop();
+		CHECK(controller.has_unsaved_current());
+		CHECK(!QFile::exists(dir + "/off-first.json"));
+		gateway.value.path = (dir + "/off-second.mkv").toStdString();
+		gateway.start();
+		CHECK(controller.unsaved_documents().size() == 1);
+		CHECK(controller.trigger_quick_marker(1, "second retained"));
+		gateway.stop();
+		CHECK(controller.has_unsaved_current());
+		// Also exercise shutdown while a third document is still recording.
+		gateway.value.path = (dir + "/off-third.mkv").toStdString();
+		gateway.start();
+		CHECK(controller.trigger_quick_marker(2, "third retained"));
+		controller.shutdown();
+		CHECK(store.recovery_copies().size() == 3);
+	}
+	gateway.value.recording = false;
+	SessionStore store(cache);
+	SessionController restarted(gateway, config, store, exporters);
+	restarted.initialize();
+	CHECK(restarted.unsaved_documents().size() == 3);
+	for (const auto &entry : restarted.unsaved_documents()) {
+		RecordingSession document;
+		CHECK(restarted.read_unsaved_document(entry.id, document));
+		CHECK(document.get_markers().size() == 1);
+	}
+	const auto id = restarted.unsaved_documents().front().id;
+	CHECK(restarted.save_unsaved_document(id, (dir + "/off-rescued.json").toStdString()));
+	CHECK(restarted.unsaved_documents().size() == 2 && store.recovery_copies().size() == 2);
+}
+
+static void delayed_split_markers(const QString &dir)
+{
+	for (const bool auto_json : {false, true}) {
+		const auto prefix = dir + (auto_json ? "/split-json" : "/split-journal");
+		PluginConfig config((prefix + ".ini").toStdString());
+		auto settings = PluginSettings{};
+		settings.auto_export.json = auto_json;
+		CHECK(config.save(settings));
+		SessionStore store((prefix + "-cache").toStdString());
+		ExporterRegistry exporters;
+		FakeGateway gateway;
+		gateway.value.fps = {60000, 1001};
+		gateway.value.path = (prefix + "-first.mkv").toStdString();
+		SessionController controller(gateway, config, store, exporters);
+		controller.initialize();
+		gateway.start();
+		gateway.value.total_frames = 599;
+		CHECK(controller.trigger_quick_marker(0, "before"));
+		gateway.value.total_frames = 600;
+		CHECK(controller.trigger_quick_marker(1, "boundary"));
+		const auto boundary = controller.session().get_markers().back();
+		gateway.pause();
+		gateway.value.total_frames = 601;
+		CHECK(controller.trigger_quick_marker(2, "after"));
+		const auto after = controller.session().get_markers().back();
+		const auto first_journal = store.cache_path();
+		gateway.split((prefix + "-second.mkv").toStdString(), 600);
+		CHECK(controller.is_paused());
+		const auto &moved = controller.session().get_markers();
+		CHECK(moved.size() == 2 && moved[0].id == boundary.id && moved[1].id == after.id);
+		CHECK(moved[0].frame_index == 0 && moved[0].timestamp_ms == 0);
+		CHECK(moved[1].frame_index == 1 && moved[1].timestamp_ms == 17 && moved[1].is_paused);
+		CHECK(moved[1].created_at_utc == after.created_at_utc && moved[1].color == after.color);
+		CHECK(!controller.can_undo() && !controller.can_redo());
+		SessionStore reader;
+		RecordingSession old, recovered;
+		CHECK(auto_json ? reader.load((prefix + "-first.json").toStdString(), old)
+				: reader.recover(first_journal, old));
+		CHECK(old.get_markers().size() == 1 && old.get_markers()[0].comment == "before");
+		CHECK(reader.recover(store.cache_path(), recovered));
+		CHECK(SessionCodec::encode(recovered) == SessionCodec::encode(controller.session()));
+		gateway.resume();
+		gateway.value.total_frames = 660;
+		CHECK(controller.trigger_quick_marker(3, "new"));
+		CHECK(controller.session().get_markers().back().id > after.id);
+		CHECK(controller.undo() && controller.session().get_markers().size() == 2);
+		CHECK(controller.redo() && controller.session().get_markers().size() == 3);
+		gateway.split((prefix + "-third.mkv").toStdString(), 660);
+		CHECK(controller.session().get_markers().size() == 1);
+		CHECK(controller.session().get_markers()[0].comment == "new");
+		CHECK(controller.session().get_markers()[0].frame_index == 0);
+		gateway.stop();
+		CHECK(controller.has_unsaved_current() == !auto_json);
+	}
+}
+
 int main(int argc, char **argv)
 {
 	QCoreApplication app(argc, argv);
@@ -682,6 +835,9 @@ int main(int argc, char **argv)
 	QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, dir.path() + "/settings");
 	try {
 		CHECK(dir.isValid());
+		auto_json_off_retains_unsaved(dir.path());
+		delayed_split_markers(dir.path());
+		delayed_split_at_memory_limit(dir.path());
 		edit_history_and_recovery(dir.path());
 		discard_documents(dir.path());
 		discard_failure_retains_snapshot(dir.path());
@@ -745,9 +901,9 @@ int main(int argc, char **argv)
 		CHECK(controller.session().video_path() == gateway.value.path);
 		CHECK(!controller.load_from_json("anything.json"));
 		auto original = controller.session().session_id();
-		gateway.split((dir.path() + "/two.mkv").toStdString(), 60);
+		gateway.split((dir.path() + "/two.mkv").toStdString(), 61);
 		CHECK(controller.session().session_id() != original && controller.current_record_ms() == 0);
-		gateway.value.total_frames = 120;
+		gateway.value.total_frames = 121;
 		gateway.quick(2);
 		CHECK(controller.session().get_markers().front().timestamp_ms == 1001);
 		gateway.split((dir.path() + "/out-of-order.mkv").toStdString(), 59);
