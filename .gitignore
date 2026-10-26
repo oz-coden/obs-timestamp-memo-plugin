@@ -8,6 +8,7 @@
 !/data
 !/src
 !/tests
+!/docs
 !.clang-format
 !.gersemirc
 !.gitignore
@@ -16,14 +17,17 @@
 !CMakePresets.json
 !LICENSE
 !README.md
+!SPEC.md
 !CHANGELOG.md
 
 # Local handoff, reviews and validation logs; keep these off the remote.
 /HANDOFF.md
-/docs/
 
 # Exclude lock files
 *.lock.json
+
+# Python release tooling caches
+__pycache__/
 
 # Exclude macOS legacy resource forks
 .DS_Store

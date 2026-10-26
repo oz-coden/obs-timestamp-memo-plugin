@@ -20,7 +20,7 @@ function(set_target_properties_plugin target)
 
   string(TIMESTAMP CURRENT_YEAR "%Y")
 
-  set_target_properties(${target} PROPERTIES VERSION 0 SOVERSION ${PLUGIN_VERSION})
+  set_target_properties(${target} PROPERTIES VERSION 0 SOVERSION ${PLUGIN_VERSION_NUMERIC})
 
   install(TARGETS ${target} RUNTIME DESTINATION "${target}/bin/64bit" LIBRARY DESTINATION "${target}/bin/64bit")
 

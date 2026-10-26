@@ -13,7 +13,7 @@ endif()
 set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL TRUE)
 
 set(CPACK_PACKAGE_NAME "${CMAKE_PROJECT_NAME}")
-set(CPACK_PACKAGE_VERSION "${CMAKE_PROJECT_VERSION}")
+set(CPACK_PACKAGE_VERSION "${PLUGIN_VERSION}")
 set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CMAKE_C_LIBRARY_ARCHITECTURE}")
 
 set(CPACK_GENERATOR "DEB")
@@ -32,9 +32,9 @@ set(
   CPACK_SOURCE_IGNORE_FILES
   ".*~$"
   \\.git/
-  \\.github/
   \\.gitignore
   \\.ccache/
+  __pycache__/
   build_.*
   cmake/\\.CMakeBuildNumber
   release/

@@ -1,0 +1,114 @@
+name: Release
+run-name: Release ${{ inputs.version }} (publish=${{ inputs.publish }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact version committed in buildspec.json (for example 1.0.0 or 1.0.0-beta1)
+        required: true
+        type: string
+      publish:
+        description: Create a version tag and GitHub Release (disable to test the build only)
+        type: boolean
+        default: true
+      draft:
+        description: Leave the GitHub Release as an unpublished draft
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate selected version and commit
+        id: version
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          python3 .github/scripts/release.py validate --version "$RELEASE_VERSION" --github-output "$GITHUB_OUTPUT"
+          if [[ "$PUBLISH" == true ]] && git show-ref --verify --quiet "refs/tags/$RELEASE_VERSION"; then
+            test "$(git rev-parse "refs/tags/$RELEASE_VERSION^{commit}")" = "$GITHUB_SHA" || {
+              echo '::error::The selected version tag already points at another commit.'
+              exit 1
+            }
+          fi
+
+  build:
+    needs: prepare
+    uses: ./.github/workflows/build-project.yaml
+    with:
+      release_mode: true
+    secrets: inherit
+
+  publish:
+    if: inputs.publish
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-files-${{ github.sha }}
+          path: distribution
+      - name: Verify downloaded files
+        working-directory: distribution
+        run: sha256sum --check SHA256SUMS.txt
+      - name: Prepare release notes
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          base = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/blob/{os.environ['GITHUB_SHA']}"
+          Path('release-notes.md').write_text(
+              f"Built from `{os.environ['GITHUB_SHA']}`.\n\n"
+              "Windows: download the **windows-x64.zip** asset. "
+              "macOS: use **macos-universal.tar.xz**. "
+              "Linux: use **ubuntu-24.04-x86_64.tar.xz** with a compatible native OBS installation.\n\n"
+              f"[Installation / 導入方法]({base}/README.md#installation) · "
+              f"[Specification / 詳細仕様]({base}/SPEC.md) · "
+              f"[Changelog / 変更履歴]({base}/CHANGELOG.md)\n\n"
+              "`SHA256SUMS.txt` contains checksums for the four release archives. "
+              "The source archive and GitHub's Source code downloads are for building from source.\n",
+              encoding='utf-8')
+          PY
+      - name: Create tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+          DRAFT: ${{ inputs.draft }}
+        run: |
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_VERSION"; then
+            test "$(git rev-parse "refs/tags/$RELEASE_VERSION^{commit}")" = "$GITHUB_SHA"
+          else
+            git tag "$RELEASE_VERSION" "$GITHUB_SHA"
+            git push origin "refs/tags/$RELEASE_VERSION"
+          fi
+          flags=(--verify-tag --draft --title "Timestamp Memo Plugin for OBS $RELEASE_VERSION" --notes-file release-notes.md)
+          if [[ "$PRERELEASE" == true ]]; then flags+=(--prerelease); fi
+          gh release create "$RELEASE_VERSION" distribution/* "${flags[@]}"
+          if [[ "$DRAFT" != true ]]; then
+            gh release edit "$RELEASE_VERSION" --draft=false
+          fi
+          gh release view "$RELEASE_VERSION" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"

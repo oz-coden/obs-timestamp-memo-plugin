@@ -60,6 +60,13 @@ the dialog lifetime regressions.
 
 See the [changelog](../CHANGELOG.md) for user-facing changes and limitations.
 
+Distribution tooling is tested separately with
+`python3 .github/scripts/test-release.py`. It checks version validation,
+installation layouts, required files, resolved Linux libraries, executable
+permissions, complete asset collection and checksums. Pull-request CI builds the
+Release archives on all three platforms and validates the assembled set without
+publishing it. See [the release guide](../docs/RELEASING.md).
+
 Regression coverage includes rendered-video/packet-PTS calibration, delayed/B-frame
 anchors, pause/resume, fractional FPS, Undo/Redo limits and persistence, unsaved
 discard, collision-safe auto exports, plugin config and global hotkey migration,
