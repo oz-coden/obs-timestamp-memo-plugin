@@ -54,13 +54,17 @@ Stamping waits for the first timed packet when calibration is required. See
   edits. Recovery journals still record changes. Use **Unsaved → Save JSON as**
   or an explicit JSON Export when you want a permanent document. Exporting an
   arbitrary format alone does not mark a document saved or delete its recovery
-  data; use Save JSON as for that.
+  data; use Save JSON as for that. Unsaved documents remain available across
+  recordings and normal OBS restarts when recovery storage is writable.
 - Failed segments remain separate from the next recording. **Unsaved (N)** offers
   Save JSON as, Export snapshot, and **Discard** for each named document. Discard
   requires confirmation and removes its recovery files. No old document is
   silently evicted: if all storage fails and eight pending documents exist only
   in memory, recording continues but new stamping pauses until one is rescued or
-  discarded. Data existing only in memory cannot survive closing OBS.
+  discarded. A delayed split can partition already captured markers into extra
+  documents at this limit; both parts are retained and stamping pauses until
+  enough documents are rescued. Data existing only in memory cannot survive
+  closing OBS.
 - Ordinary status notifications can be disabled. Failures and data-protection
   warnings remain visible. Journals are flushed, but power-loss durability is not
   guaranteed.
@@ -178,12 +182,14 @@ outputでは最初のpacketを待って打刻します。[変更履歴と制約]
 - 自動JSON OFF: 停止・その後の編集で恒久JSONを生成しません。復旧journalは更新します。
   「未保存 → JSONを別名保存」または明示的なJSON Exportを利用してください。
   任意形式へのExportだけでは保存済みにせず、復旧ファイルも削除しません。救済を確定
-  する場合はJSONを別名保存します。
+  する場合はJSONを別名保存します。復旧先へ書き込める場合、未保存文書は次回録画や
+  OBSの通常終了・再起動を越えて未保存一覧に保持します。
 - 保存失敗したsegmentは次の録画と分けて保持します。「未保存 (N)」の各文書から
   保存 / Export / 確認付き破棄ができます。破棄で対象復旧ファイルを削除します。
   古い文書を暗黙に捨てません。すべての保存が失敗しpending文書8件がメモリのみの場合、
   OBS録画を続けて新たな打刻だけ停止し、救済・破棄後に再開します。メモリのみの
-  データはOBS終了を越えて保持できません。
+  データはOBS終了を越えて保持できません。遅延した分割通知で打刻済みmarkerが複数文書に
+  分かれる場合は上限を越えても両方を保持し、十分な文書を救済するまで新たな打刻を停止します。
 - 通常通知はOFFにできますが、失敗・データ保護の警告は常に通知します。
   journalはflushしますが停電時の永続化保証ではありません。
 - 設定はOBSの `obs_module_config_path("settings.ini")`、通常はOBS設定フォルダ内の

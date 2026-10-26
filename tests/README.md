@@ -67,3 +67,10 @@ notification severity, Markdown privacy/escaping, CSV text/formula protection,
 auto JSON OFF edits, detailed transactional validation and actual locale tests.
 Real encoder/muxer accuracy and native keyboard/clipboard behavior still need the
 actual OBS validation.
+
+Document safety regressions cover all three stale Unsaved menu actions while
+recording events replace the current document, automatic JSON OFF across normal
+restarts, delayed split boundaries with fractional FPS and paused markers, and
+split partition retention when every recovery destination fails at the memory
+limit. Carried markers form the new document's initial state; subsequent edits
+retain ordinary Undo/Redo behavior.

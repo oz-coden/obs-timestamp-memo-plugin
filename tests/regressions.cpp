@@ -26,6 +26,7 @@
 #include <QJsonDocument>
 #include <QKeyEvent>
 #include <QMenu>
+#include <QMessageBox>
 #include <QGroupBox>
 #include <QPointer>
 #include <QLayout>
@@ -393,7 +394,7 @@ static void lifecycle_and_ui(const QString &dir, QMainWindow &window)
 	CHECK(!controller.trigger_quick_marker(0));
 	CHECK(FakeObs::recording_output_queries() == 0);
 	FakeObs::set_rate(60000, 1001);
-	FakeObs::start(dir + "/segment1.mkv", 600);
+	FakeObs::start(dir + "/segment1.mkv", 599);
 	CHECK(controller.trigger_quick_marker(0));
 	CHECK(table->model()->rowCount() == 1);
 	CHECK(table->model()->setData(table->model()->index(0, MarkerTableModel::Col_Comment), "UI edit"));
@@ -660,6 +661,68 @@ static void edit_actions(const QString &dir, QMainWindow &window)
 	FakeObs::reset(&window, dir + "/fallback");
 }
 
+static void unsaved_menu_document_changes(const QString &dir, QMainWindow &window)
+{
+	// Save, Export and Discard all refer to the document named when the menu opens.
+	for (int operation = 0; operation < 3; ++operation) {
+		const auto prefix = dir + QString("/stale-menu-%1").arg(operation);
+		FakeObs::reset(&window, prefix + "-cache");
+		FakeObs::set_rate(60, 1);
+		FakeObs::set_encoder(1, 1920, 1080);
+		CHECK(QDir().mkpath(prefix + "-a.json"));
+		CHECK(QDir().mkpath(prefix + "-b.json"));
+		CHECK(obs_module_load());
+		auto *content = qobject_cast<DockWidget *>(FakeObs::dock()->widget());
+		auto &controller = content->controller();
+		FakeObs::start(prefix + "-a.mkv");
+		CHECK(controller.trigger_quick_marker(0, "A retained"));
+		FakeObs::stop();
+		CHECK(controller.has_unsaved_current());
+		bool rejected = false;
+		QString current_journal;
+		QTimer::singleShot(0, [&]() {
+			auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget());
+			CHECK(menu && menu->actions().size() == 1);
+			auto *original = menu->actions().front();
+			CHECK(original->text().contains("-a.mkv"));
+			FakeObs::start(prefix + "-b.mkv");
+			CHECK(controller.trigger_quick_marker(0, "B must survive"));
+			FakeObs::stop();
+			CHECK(controller.has_unsaved_current());
+			current_journal = caches(dir).filter(QFileInfo(prefix).fileName() + "-b.").value(0);
+			CHECK(!current_journal.isEmpty());
+			menu->setActiveAction(original);
+			QKeyEvent right(QEvent::KeyPress, Qt::Key_Right, Qt::NoModifier);
+			QApplication::sendEvent(menu, &right);
+			QTimer::singleShot(0, [&]() {
+				auto *submenu = qobject_cast<QMenu *>(QApplication::activePopupWidget());
+				CHECK(submenu && submenu->actions().size() == 3);
+				submenu->setActiveAction(submenu->actions()[operation]);
+				QTimer::singleShot(0, [&]() {
+					auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
+					// QMessageBox ignores window titles on macOS. Check the
+					// diagnostic itself on every platform.
+					CHECK(box &&
+					      box->text() ==
+						      "The current document changed. Choose the unsaved document again.");
+					rejected = true;
+					box->button(QMessageBox::Ok)->click();
+				});
+				QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+				QApplication::sendEvent(submenu, &enter);
+			});
+		});
+		CHECK(QMetaObject::invokeMethod(content, "onUnsavedClicked", Qt::DirectConnection));
+		CHECK(rejected && controller.session().video_path() == (prefix + "-b.mkv").toStdString());
+		CHECK(controller.session().get_markers().size() == 1);
+		CHECK(controller.session().get_markers()[0].comment == "B must survive");
+		CHECK(controller.has_unsaved_current() && controller.unsaved_documents().size() == 1);
+		CHECK(QFile::exists(dir + "/" + current_journal));
+		obs_module_unload();
+	}
+	FakeObs::reset(&window, dir + "/fallback");
+}
+
 static void localization(const QString &dir, QMainWindow &window)
 {
 	FakeObs::reset(&window, dir + "/locale-cache");
@@ -708,6 +771,7 @@ int main(int argc, char **argv)
 	QMainWindow window;
 	FakeObs::reset(&window, dir.path() + "/fallback");
 	try {
+		unsaved_menu_document_changes(dir.path(), window);
 		notification_severity();
 		presentation_time(dir.path(), window);
 		localization(dir.path(), window);

@@ -31,6 +31,12 @@
 
 ### Fixed
 
+- Unsaved menu actions reject a changed current document, preventing a stale
+  menu from saving, exporting or discarding a different recording.
+- Automatic JSON OFF retains unsaved documents after stop/split and keeps them
+  discoverable after a normal restart when recovery storage is writable.
+- Delayed split notifications move markers at or beyond the boundary into the
+  new segment and recalculate relative frames, milliseconds and timecodes.
 - Important warnings remain visible when ordinary success notifications are off.
 - Custom labels survive marker type changes.
 - Automatic JSON OFF no longer creates permanent JSON during later edits;
@@ -83,6 +89,12 @@
 
 #### 修正
 
+- 未保存メニューを開いている間に現在の文書が変わった場合は操作を中断し、別の録画を
+  保存・Export・破棄することを防ぎます。
+- 自動JSON OFFでも停止・分割後の文書を未保存として保持し、復旧先へ書き込める場合は
+  OBSの通常再起動後も未保存一覧から救済できます。
+- 分割通知が遅れた場合、境界以降のmarkerを新しいsegmentへ移し、相対frame・ms・
+  timecodeを再計算します。
 - 通常通知OFFでも重要警告を表示。type変更時にはcustom labelを保持します。
 - 自動JSON OFFでは停止後の編集で恒久JSONを生成せず、復旧journalだけを更新します。
   明示的なSave/Exportは引き続き利用できます。

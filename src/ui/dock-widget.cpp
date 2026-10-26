@@ -264,6 +264,7 @@ void DockWidget::update_status_ui()
 void DockWidget::onUnsavedClicked()
 {
 	QPointer<DockWidget> guard(this);
+	const auto menu_revision = controller_.document_revision();
 	QMenu menu;
 	auto add_document = [&](uint64_t id, const QString &title) {
 		auto *entry = menu.addMenu(title);
@@ -285,6 +286,13 @@ void DockWidget::onUnsavedClicked()
 	if (!guard || !action)
 		return;
 	const auto id = action->data().toULongLong();
+	// A popup keeps processing recording events. ID 0 is only valid for the
+	// document shown when the menu was built, including Save and Export actions.
+	if (id == 0 && controller_.document_revision() != menu_revision) {
+		QMessageBox::warning(this, tr("Document Changed"),
+				     tr("The current document changed. Choose the unsaved document again."));
+		return;
+	}
 	if (action->objectName() == "DiscardUnsaved") {
 		const auto revision = controller_.document_revision();
 		const auto title = action->property("documentTitle").toString();

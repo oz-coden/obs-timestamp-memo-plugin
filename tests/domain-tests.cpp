@@ -75,6 +75,16 @@ int main()
 		CHECK(session.update_marker(marker.id, "Edited", "#123456", "changed", 3));
 		CHECK(session.get_markers().front().type_index == 3);
 		CHECK(snapshot.get_markers().front().comment == "memo");
+		auto split = snapshot;
+		const auto boundary = split.add_marker_at_frame(120, 2, "boundary", "#123456", "at split", true);
+		const auto after = split.add_marker_at_frame(121, 3, "after", "#abcdef", "after split", false);
+		const auto following = split.take_markers_from_frame(120);
+		CHECK(split.get_markers().size() == 1 && split.get_markers().front().id == marker.id);
+		CHECK(following.size() == 2 && following[0].id == boundary.id && following[1].id == after.id);
+		CHECK(following[0].frame_index == 0 && following[0].timestamp_ms == 0 && following[0].is_paused);
+		CHECK(following[1].frame_index == 1 && following[1].timestamp_ms == 17);
+		CHECK(following[1].active_timecode(split.frame_rate()) == "00:00:00;01");
+		CHECK(split.add_marker_at_frame(1, 0, "", "", "", false).id > after.id);
 		CHECK(!session.update_marker(999, "", "", "") && !session.delete_marker(999));
 		CHECK(session.delete_marker(marker.id));
 		auto second = session.add_marker_at_frame(120, 0, "late", "", "<&>\ntext", true);

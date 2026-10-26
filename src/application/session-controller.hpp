@@ -130,7 +130,8 @@ private:
 	bool apply_history(bool forward);
 	MarkerEditHistory history_;
 	void journal_update(uint32_t id);
-	void start_document(const std::string &path, const VideoFrameRate &fps, uint32_t width, uint32_t height);
+	void start_document(const std::string &path, const VideoFrameRate &fps, uint32_t width, uint32_t height,
+			    std::vector<MemoMarker> markers = {});
 	bool initialized_ = false;
 	bool journal_warning_shown_ = false;
 	std::vector<UnsavedDocument> unsaved_documents_;
@@ -138,6 +139,6 @@ private:
 	bool document_unsaved_ = false, capture_blocked_ = false;
 	bool journal_current_ = false;
 	RecordingSnapshot pending_capture_;
-	bool preserve_current_document();
+	bool preserve_current_document(bool split_partition = false);
 	void resume_capture();
 };
